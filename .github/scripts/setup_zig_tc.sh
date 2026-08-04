@@ -35,18 +35,8 @@ exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-func
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 
-# ---------- LD: use real GNU ld (zig cc can't handle -r, --gc-sections, -lgcc, etc.) ----------
-# Find libgcc.a path from gcc-aarch64-linux-gnu package
-LIBGCC_DIR=$(aarch64-linux-gnu-gcc -print-libgcc-file-name 2>/dev/null | xargs dirname 2>/dev/null || echo "/usr/lib/gcc-cross/aarch64-linux-gnu/11")
-cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << ZIGLD
-#!/bin/bash
-# Use real GNU ld with libgcc path
-exec aarch64-linux-gnu-ld -L ${LIBGCC_DIR} "\$@"
-ZIGLD
-chmod +x "$TC_DIR/${BINUTILS_PREFIX}-ld"
-
-# ---------- symlink binutils from system ----------
-for tool in ar objcopy objdump nm ranlib strip readelf; do
+# ---------- symlink binutils from system (including ld) ----------
+for tool in ar objcopy objdump nm ranlib strip readelf ld; do
     if command -v "${BINUTILS_PREFIX}-${tool}" &>/dev/null; then
         ln -sf "$(command -v ${BINUTILS_PREFIX}-${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
     else

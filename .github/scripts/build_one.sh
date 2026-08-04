@@ -59,6 +59,13 @@ export BSP_CHIPRAM_TOOLCHAIN="$TC_PREFIX"
 export BSP_UBOOT_TOOLCHAIN="$TC_PREFIX"
 export BSP_OBJ="${BSP_OBJ:-$(nproc)}"
 
+# Make libgcc.a findable by GNU ld (Makefile has -L . -lgcc)
+LIBGCC=$(aarch64-linux-gnu-gcc -print-libgcc-file-name 2>/dev/null)
+if [[ -n "$LIBGCC" && -f "$LIBGCC" ]]; then
+    ln -sf "$LIBGCC" bootloader/chipram/libgcc.a
+    ln -sf "$LIBGCC" bootloader/u-boot15/libgcc.a
+fi
+
 echo "============================================"
 echo "  Platform : $SHORT"
 echo "  Product  : $PRODUCT"
