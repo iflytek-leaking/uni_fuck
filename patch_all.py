@@ -306,4 +306,20 @@ if "CONFIG_VIDEO is not set" not in d:
 else:
     print("[SKIP] defconfig already modified")
 
+# ---------- 14. Remove hardcoded toolchain paths in _base cfg files ----------
+# Some platforms (s9863a, ums512, sl8541e, ums7520) override BSP_*_TOOLCHAIN
+# with deleted Linaro GCC paths. Comment them out so our zig toolchain persists.
+import glob as _glob
+tc_patch_cnt = 0
+for cfg in _glob.glob(os.path.join(REPO, "device", "**", "*_base", "*.cfg"), recursive=True):
+    with open(cfg, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    if "BSP_CHIPRAM_TOOLCHAIN=" in d or "BSP_UBOOT_TOOLCHAIN=" in d:
+        d = re.sub(r'^(export\s+)?BSP_CHIPRAM_TOOLCHAIN=.*$', r'# \g<0>', d, flags=re.MULTILINE)
+        d = re.sub(r'^(export\s+)?BSP_UBOOT_TOOLCHAIN=.*$', r'# \g<0>', d, flags=re.MULTILINE)
+        with open(cfg, "w", newline="") as f:
+            f.write(d)
+        tc_patch_cnt += 1
+print(f"[OK] Toolchain override removed in {tc_patch_cnt} cfg files")
+
 print("\nALL PATCHES DONE")
