@@ -114,6 +114,20 @@ for fn, oldv in soc_map.items():
     else:
         print(f"[SKIP] soc_config {fn} (not found)")
 
+# ---------- 4b. ddrc_init.c: sync #error guard with new MAX_PKT_SIZE ----------
+# MAX_PKT_SIZE was optimized to 0x4000 above; the DDR r2p2 code has a
+# hardcoded #error guard still expecting 0x300. Update it to match.
+ddrc_files = glob.glob(os.path.join(REPO, "bootloader", "chipram", "ddr", "**", "ddrc_init.c"), recursive=True)
+for ddrc in ddrc_files:
+    with open(ddrc, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    nd = d.replace("#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x300)",
+                   "#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x4000)")
+    if nd != d:
+        with open(ddrc, "w", newline="") as f:
+            f.write(nd)
+        print(f"[OK] ddrc_init.c #error guard -> 0x4000 ({os.path.relpath(ddrc, REPO)})")
+
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
     ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
