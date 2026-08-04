@@ -70,6 +70,11 @@ jobs:
           echo "int main(){return 0;}" | aarch64-linux-gnu-gcc -x c - -o /tmp/test_aarch64
           file /tmp/test_aarch64
 
+      - name: Fix executable permissions
+        run: |
+          find . -name '*.sh' -o -name 'mkconfig' | xargs chmod +x
+          chmod +x build/packimage_scripts/sprd_sign build/packimage_scripts/imgheaderinsert
+
       - name: Apply source patches
         run: python3 patch_all.py
 
