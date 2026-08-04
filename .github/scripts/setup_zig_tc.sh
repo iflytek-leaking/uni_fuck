@@ -35,8 +35,29 @@ exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-func
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 
-# ---------- symlink binutils from system (including ld) ----------
-for tool in ar objcopy objdump nm ranlib strip readelf ld; do
+# ---------- LD wrapper: zig cc with GNU ld flag translation ----------
+cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << 'ZIGLD'
+#!/bin/bash
+# Translate GNU ld flags to zig cc (clang driver) compatible flags
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -lgcc)
+            shift ;;  # skip: zig provides compiler_rt (replaces libgcc)
+        -Map)
+            shift; ARGS+=("-Wl,-Map" "-Wl,$1"); shift ;;
+        --gc-sections|-Bstatic|-r|--build-id|--no-undefined)
+            ARGS+=("-Wl,$1"); shift ;;
+        *)
+            ARGS+=("$1"); shift ;;
+    esac
+done
+exec zig cc -target aarch64-linux-gnu "${ARGS[@]}"
+ZIGLD
+chmod +x "$TC_DIR/${BINUTILS_PREFIX}-ld"
+
+# ---------- symlink binutils from system (excluding ld) ----------
+for tool in ar objcopy objdump nm ranlib strip readelf; do
     if command -v "${BINUTILS_PREFIX}-${tool}" &>/dev/null; then
         ln -sf "$(command -v ${BINUTILS_PREFIX}-${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
     else
