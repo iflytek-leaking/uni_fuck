@@ -59,6 +59,8 @@ export BSP_PLATFORM_VERSION
 export BSP_CHIPRAM_TOOLCHAIN="$TC_PREFIX"
 export BSP_UBOOT_TOOLCHAIN="$TC_PREFIX"
 export BSP_OBJ="${BSP_OBJ:-$(nproc)}"
+# Synchronize parallel make output by target for clearer error messages
+export MAKEFLAGS="--output-sync=target"
 
 # Make libgcc.a findable by GNU ld (Makefile has -L . -lgcc)
 LIBGCC=$(aarch64-linux-gnu-gcc -print-libgcc-file-name 2>/dev/null)

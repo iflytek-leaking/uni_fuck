@@ -16,22 +16,85 @@ mkdir -p "$TC_DIR"
 cat > "$TC_DIR/${BINUTILS_PREFIX}-gcc" << 'ZIGWRAP'
 #!/bin/bash
 # zig cc: drop flags that clang/zig don't understand
+
+# Delegate GCC -print-* queries to real system GCC (Zig cc doesn't support them)
+# Only pass the -print-* flag itself; CFLAGS may contain 32-bit ARM flags
+# that aarch64 GCC would reject.
+for arg in "$@"; do
+    case "$arg" in
+        -print-libgcc-file-name)
+            exec /usr/bin/aarch64-linux-gnu-gcc -print-libgcc-file-name ;;
+        -print-file-name=*)
+            exec /usr/bin/aarch64-linux-gnu-gcc "$arg" ;;
+        -print-search-dirs)
+            exec /usr/bin/aarch64-linux-gnu-gcc -print-search-dirs ;;
+        -print-prog-name=*)
+            exec /usr/bin/aarch64-linux-gnu-gcc "$arg" ;;
+    esac
+done
+
 ARGS=()
 SKIP_NEXT=0
+DEPFILE=""
+HAS_S=0
+OUTFILE=""
+SRCFILE=""
+EXPECT_OUT=0
+
 for arg in "$@"; do
     if [[ "$SKIP_NEXT" == "1" ]]; then SKIP_NEXT=0; continue; fi
+    if [[ "$EXPECT_OUT" == "1" ]]; then
+        OUTFILE="$arg"
+        ARGS+=("$arg")
+        EXPECT_OUT=0
+        continue
+    fi
     case "$arg" in
-        -mabi=lp64|-mgeneral-regs-only|-mthumb-interwork|-mno-thumb-interwork|-marm|-msoft-float|-mshort-load-bytes|-malignment-traps|-ffixed-r8|-ffixed-r9|-mno-unaligned-access|-mlittle-endian|-mbig-endian|-fno-stack-protector)
-            ;;  # skip GCC-specific ARM flags
+        -mabi=lp64|-mgeneral-regs-only|-mthumb-interwork|-mno-thumb-interwork|-marm|-msoft-float|-mshort-load-bytes|-malignment-traps|-ffixed-r8|-ffixed-r9|-mno-unaligned-access|-mlittle-endian|-mbig-endian|-fno-stack-protector|-fverbose-asm)
+            ;;  # skip GCC-specific / unsupported flags
         -march=*)
             ;;  # zig targets aarch64 already, -march=armv8-a confuses it
         -mthumb)
             SKIP_NEXT=1 ;;  # skip -mthumb <arg>
+        -Wp,-MD,*)
+            DEPFILE="${arg#-Wp,-MD,}" ;;
+        -Wp,-MMD,*)
+            DEPFILE="${arg#-Wp,-MMD,}" ;;
+        -Wp,-MT,*)
+            ARGS+=("-MT" "${arg#-Wp,-MT,}") ;;
+        -S)
+            HAS_S=1
+            ARGS+=("$arg") ;;
+        -o)
+            ARGS+=("$arg")
+            EXPECT_OUT=1 ;;
+        *.c|*.S|*.s)
+            SRCFILE="$arg"
+            ARGS+=("$arg") ;;
         *)
             ARGS+=("$arg") ;;
     esac
 done
-exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-return-type -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-deprecated-non-prototype -Wno-deprecated-declarations
+
+# Add -MD -MF only when NOT -S (Zig cc has a bug with -S + dep generation → FileNotFound)
+if [[ "$HAS_S" != "1" && -n "$DEPFILE" ]]; then
+    ARGS+=("-MD" "-MF" "$DEPFILE")
+fi
+
+# Run zig cc
+zig cc -target aarch64-linux-gnu "${ARGS[@]}" \
+    -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int \
+    -Wno-return-type -Wno-int-conversion -Wno-incompatible-pointer-types \
+    -Wno-deprecated-non-prototype -Wno-deprecated-declarations
+RC=$?
+
+# When -S was used, Zig cc doesn't generate the depfile.
+# Create a minimal one so Kbuild's fixdep doesn't fail.
+if [[ "$HAS_S" == "1" && -n "$DEPFILE" && ! -f "$DEPFILE" ]]; then
+    echo "${OUTFILE:-output.s}: ${SRCFILE:-unknown}" > "$DEPFILE"
+fi
+
+exit $RC
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 

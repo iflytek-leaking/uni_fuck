@@ -103,7 +103,7 @@ fi
 
 if [ "${arch}" = "arm" ] ; then
 	rm -rf asm/proc
-	cp -r asm/proc-armv asm/proc
+	cp -r asm/proc-armv asm/proc 2>/dev/null || true
 fi
 
 #
