@@ -75,6 +75,7 @@ jobs:
         run: |
           find . -name '*.sh' -o -name 'mkconfig' | xargs chmod +x
           chmod +x build/packimage_scripts/sprd_sign build/packimage_scripts/imgheaderinsert
+          find bootloader -type f \( -name 'dtc' -o -name 'mkimage' -o -name 'dumpimage' -o -name 'bmp_logo' -o -name 'envcrc' -o -name 'mkenvimage' -o -name 'xway-swap-bytes' -o -name 'mksunxiboot' -o -name 'kwboot' -o -name 'proftool' \) -exec chmod +x {} \;
 
       - name: Apply source patches
         run: python3 patch_all.py
