@@ -35,15 +35,8 @@ exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-func
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 
-# ---------- LD wrapper: zig cc (acts as linker) ----------
-cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << 'ZIGWRAP2'
-#!/bin/bash
-exec zig cc -target aarch64-linux-gnu "$@"
-ZIGWRAP2
-chmod +x "$TC_DIR/${BINUTILS_PREFIX}-ld"
-
-# ---------- symlink binutils from system ----------
-for tool in ar objcopy objdump nm ranlib strip readelf; do
+# ---------- symlink binutils from system (including ld) ----------
+for tool in ar objcopy objdump nm ranlib strip readelf ld; do
     if command -v "${BINUTILS_PREFIX}-${tool}" &>/dev/null; then
         ln -sf "$(command -v ${BINUTILS_PREFIX}-${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
     else
