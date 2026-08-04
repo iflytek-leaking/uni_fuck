@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Apply all HANDOVER_PROMPT_V2 patches to ud710_bsp repo."""
+import os, re, glob
+
+# patch_all.py lives at BSP repo root
+REPO = os.path.dirname(os.path.abspath(__file__))
+
+def p(rel):
+    return os.path.join(REPO, *rel.split("/"))
+
+def patch_file(rel, pairs, label, count=0):
+    """pairs: list of (old,new). count=0 -> replace all."""
+    fp = p(rel)
+    if not os.path.exists(fp):
+        print(f"[SKIP] {label}: {rel} not found")
+        return
+    with open(fp, "rb") as f:
+        data = f.read().decode("utf-8", errors="replace")
+    orig = data
+    for old, new in pairs:
+        if old not in data:
+            print(f"[WARN] {label}: pattern not found: {old[:50]!r}")
+            continue
+        data = data.replace(old, new, count)
+    if data != orig:
+        with open(fp, "w", newline="") as f:
+            f.write(data)
+    print(f"[OK] {label} ({rel})")
+
+# ---------- 1. PATH fix (21 cfg files) ----------
+cfg_files = glob.glob(os.path.join(REPO, "device", "**", "*_base", "common.cfg"), recursive=True)
+cnt = 0
+for cf in cfg_files:
+    with open(cf, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    nd = d.replace('PATH//"${BSP_TOOL_PATH}:"', 'PATH')
+    if nd != d:
+        with open(cf, "w", newline="") as f:
+            f.write(nd)
+        cnt += 1
+print(f"[OK] PATH fix: {cnt}/{len(cfg_files)} files")
+
+# ---------- 2. sprd_usb_drv.h: 16KB + raw decl ----------
+patch_file("bootloader/chipram/include/sprd_usb_drv.h", [
+    ("#define MAX_RECV_LENGTH 1024 * 4", "#define MAX_RECV_LENGTH (1024 * 16) // Optimized 16KB"),
+    ("extern int usb_get_packet(unsigned char* buf, int len);",
+     "extern int usb_get_packet(unsigned char* buf, int len);\nextern int usb_get_raw_packet(unsigned char* buf, unsigned int len);"),
+], "usb_drv.h 16KB + raw decl")
+
+# ---------- 3. sprd_usb2_driver.c: 16KB + skip cache + raw fn ----------
+fp = p("bootloader/chipram/nand_fdl/common/sprd_usb2_driver.c")
+with open(fp, "rb") as f:
+    d = f.read().decode("utf-8", errors="replace")
+d = re.sub(r"#define MAX_RECV_LENGTH\s+\(64\*64\).*", "#define MAX_RECV_LENGTH     (256*64)// Optimized 16KB", d)
+n = d.count("#ifndef CONFIG_SCX35L64")
+d = d.replace("#ifndef CONFIG_SCX35L64", "#if 0 // Optimized skip cache")
+if "usb_get_raw_packet" not in d:
+    d += r'''
+
+/* Optimized raw path for high-speed bulk transfer - zero HDLC overhead */
+int usb_get_raw_packet(unsigned char* buf, unsigned int len)
+{
+    unsigned int total = 0;
+    unsigned char *dest = buf;
+    while (total < len) {
+        if (readIndex == recv_length) {
+            readIndex = 0;
+            recv_length = 0;
+            usb_handler();
+            if (recv_length > 0) {
+                nIndex = currentDmaBufferIndex;
+                currentDmaBufferIndex ^= 0x1;
+            } else
+                continue;
+        }
+        unsigned int avail = recv_length - readIndex;
+        unsigned int need = len - total;
+        unsigned int copy = (avail < need) ? avail : need;
+        unsigned char *src = usb_out_endpoint_buf[nIndex] + readIndex;
+        unsigned int i;
+        for (i = 0; i < copy; i++)
+            dest[total + i] = src[i];
+        readIndex += copy;
+        total += copy;
+    }
+    return total;
+}
+'''
+with open(fp, "w", newline="") as f:
+    f.write(d)
+print(f"[OK] usb2_driver.c: 16KB, skip-cache {n} sites, raw fn appended")
+
+# ---------- 4. soc_config MAX_PKT_SIZE ----------
+soc_map = {
+    "arch-roc1/soc_config.h": "0x1000",
+    "arch-qogirn6pro/soc_config.h": "0x400",
+    "arch-sharkl5/soc_config.h": "0x400",
+    "arch-sharkl5pro/soc_config.h": "0x300",
+}
+for fn, oldv in soc_map.items():
+    fp = p("bootloader/chipram/arch/arm/include/asm/" + fn)
+    if os.path.exists(fp):
+        with open(fp, "rb") as f:
+            d = f.read().decode("utf-8", errors="replace")
+        nd = re.sub(r"#define MAX_PKT_SIZE\s+%s" % re.escape(oldv),
+                    "#define MAX_PKT_SIZE    0x4000 // Optimized", d)
+        if nd != d:
+            with open(fp, "w", newline="") as f:
+                f.write(nd)
+            print(f"[OK] soc_config {fn} -> 0x4000")
+        else:
+            print(f"[SKIP] soc_config {fn} (pattern not found)")
+    else:
+        print(f"[SKIP] soc_config {fn} (not found)")
+
+# ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
+patch_file("bootloader/u-boot15/common/image-fit.c", [
+    ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
+], "image-fit fdt macro")
+patch_file("bootloader/u-boot15/common/image-sig.c", [
+    ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
+    ("fdt_for_each_subnode(sig_blob, noffset, sig_node)", "fdt_for_each_subnode(noffset, sig_blob, sig_node)"),
+    ("fdt_for_each_subnode(fit, noffset, conf_noffset)", "fdt_for_each_subnode(noffset, fit, conf_noffset)"),
+], "image-sig fdt macro")
+
+# ---------- 6. sec_common.c remove splloader force-check ----------
+patch_file("bootloader/u-boot15/lib/secureboot/common/sec_common.c", [
+    ("static uchar *const s_force_secure_check[] = {\n    \"splloader\",",
+     "static uchar *const s_force_secure_check[] = {\n    // Removed splloader restriction\n    // \"splloader\","),
+], "sec_common remove splloader")
+
+# ---------- 7. dl_cmd_proc.c enable_write_flash = 1 ----------
+patch_file("bootloader/u-boot15/common/dloader/dl_cmd_proc.c", [
+    ("static int enable_write_flash = 0;", "static int enable_write_flash = 1;"),
+], "enable_write_flash=1")
+
+# ---------- 8. dl_cmd_proc.c unlock/avb commands ----------
+fp = p("bootloader/u-boot15/common/dloader/dl_cmd_proc.c")
+with open(fp, "rb") as f:
+    d = f.read().decode("utf-8", errors="replace")
+old_fn = """int dl_cmd_disable_hdlc(dl_packet_t *packet, void *arg)
+{
+\tdl_send_ack(BSL_REP_ACK);
+\tFDL_DisableHDLC(1);
+\treturn 0;
+}"""
+new_fn = old_fn + """
+#define BSL_CMD_UNLOCK_BL 0x500
+#define BSL_CMD_DISABLE_AVB 0x502
+int dl_cmd_unlock_bl(dl_packet_t *packet, void *arg)
+{
+\tset_lock_status(1); // VBOOT_STATUS_UNLOCK
+\t_send_reply(0);
+\treturn 0;
+}
+int dl_cmd_disable_avb(dl_packet_t *packet, void *arg)
+{
+\tset_lock_status(1);
+\tcommon_raw_erase("vbmeta", 0, 0);
+\t_send_reply(0);
+\treturn 0;
+}"""
+if "dl_cmd_unlock_bl" in d:
+    print("[SKIP] unlock/avb already present")
+elif old_fn in d:
+    d = d.replace(old_fn, new_fn)
+    if "#include <loader_common.h>" not in d:
+        d = d.replace('#include <common.h>',
+                      '#include <common.h>\n#include <loader_common.h>\n#include <sprd_common_rw.h>')
+    with open(fp, "w", newline="") as f:
+        f.write(d)
+    print("[OK] unlock/avb cmds added")
+else:
+    print("[WARN] dl_cmd_disable_hdlc pattern not found")
+
+# ---------- 9. cmd_download.c register new commands ----------
+fp = p("bootloader/u-boot15/common/cmd_download.c")
+with open(fp, "rb") as f:
+    d = f.read().decode("utf-8", errors="replace")
+old_reg = "\tdl_cmd_register(BSL_CMD_DIS_HDLC, dl_cmd_disable_hdlc);"
+new_reg = old_reg + "\n\tdl_cmd_register(BSL_CMD_UNLOCK_BL, dl_cmd_unlock_bl);\n\tdl_cmd_register(BSL_CMD_DISABLE_AVB, dl_cmd_disable_avb);"
+if "BSL_CMD_UNLOCK_BL" in d:
+    print("[SKIP] already registered")
+elif old_reg in d:
+    d = d.replace(old_reg, new_reg)
+    with open(fp, "w", newline="") as f:
+        f.write(d)
+    print("[OK] cmd_download register")
+else:
+    print("[WARN] register pattern not found")
+
+# ---------- 10. dl_operate.c read cache 256KB ----------
+fp = p("bootloader/u-boot15/common/dloader/dl_operate.c")
+with open(fp, "rb") as f:
+    d = f.read().decode("utf-8", errors="replace")
+old_top = "static DL_EMMC_FILE_STATUS g_status;\nstatic DL_EMMC_STATUS g_dl_eMMCStatus;"
+new_top = old_top + """
+#define READ_CACHE_SIZE (256*1024)
+#define READ_CACHE_INVALID ((uint64_t)-1)
+static unsigned char read_cache_buffer[READ_CACHE_SIZE] __attribute__((aligned(64)));
+static uint64_t read_cache_start = READ_CACHE_INVALID;
+static uint64_t read_cache_end = 0;
+static char read_cache_partition[64] = {0};
+static int read_cache_valid = 0;"""
+old_rs = """OPERATE_STATUS dl_read_start(uchar * partition_name, uint64_t size)
+{
+\tsize_t sblock_size = 0;
+\tstruct ext2_sblock *sblock = NULL;
+
+\tstrcpy(g_dl_eMMCStatus.curUserPartitionName, partition_name);"""
+new_rs = old_rs.replace(
+    "strcpy(g_dl_eMMCStatus.curUserPartitionName, partition_name);",
+    "strcpy(g_dl_eMMCStatus.curUserPartitionName, partition_name);\n\tread_cache_start = READ_CACHE_INVALID; read_cache_end = 0; read_cache_valid = 0; memset(read_cache_partition, 0, sizeof(read_cache_partition));")
+old_mid = """OPERATE_STATUS dl_read_midst(uint32_t size, uint64_t off, uchar * buf)
+{
+\tif (PARTITION_PURPOSE_NV == g_dl_eMMCStatus.partitionpurpose) {
+\t\tmemcpy(buf, (uchar *) (g_eMMCBuf + off), size);
+\t} else {
+\t\tif (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, (uint64_t)size, (uint64_t)off, buf)) {
+\t\t\terrorf("read error!\\n");
+\t\t\treturn OPERATE_SYSTEM_ERROR;
+\t\t}
+\t}
+
+\treturn OPERATE_SUCCESS;
+}"""
+new_mid = """OPERATE_STATUS dl_read_midst(uint32_t size, uint64_t off, uchar * buf)
+{
+\tif (PARTITION_PURPOSE_NV == g_dl_eMMCStatus.partitionpurpose) {
+\t\tmemcpy(buf, (uchar *) (g_eMMCBuf + off), size);
+\t\treturn OPERATE_SUCCESS;
+\t}
+\tif (read_cache_valid && (0 == strcmp(read_cache_partition, g_dl_eMMCStatus.curUserPartitionName))) {
+\t\tif (off >= read_cache_start && (off + size) <= read_cache_end) {
+\t\t\tmemcpy(buf, read_cache_buffer + (off - read_cache_start), size);
+\t\t\treturn OPERATE_SUCCESS;
+\t\t}
+\t}
+\t{
+\t\tuint64_t aligned_off = (off / READ_CACHE_SIZE) * READ_CACHE_SIZE;
+\t\tuint64_t cache_sz = READ_CACHE_SIZE;
+\t\tif (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, cache_sz, aligned_off, (char*)read_cache_buffer)) {
+\t\t\tif (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, (uint64_t)size, (uint64_t)off, buf)) {
+\t\t\t\terrorf("read error!\\n");
+\t\t\t\treturn OPERATE_SYSTEM_ERROR;
+\t\t\t}
+\t\t\treturn OPERATE_SUCCESS;
+\t\t}
+\t\tread_cache_start = aligned_off; read_cache_end = aligned_off + cache_sz; read_cache_valid = 1; strcpy(read_cache_partition, g_dl_eMMCStatus.curUserPartitionName);
+\t\tif (off >= read_cache_start && (off + size) <= read_cache_end) {
+\t\t\tmemcpy(buf, read_cache_buffer + (off - read_cache_start), size);
+\t\t\treturn OPERATE_SUCCESS;
+\t\t}
+\t\tif (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, (uint64_t)size, (uint64_t)off, buf)) {
+\t\t\terrorf("read error!\\n");
+\t\t\treturn OPERATE_SYSTEM_ERROR;
+\t\t}
+\t\treturn OPERATE_SUCCESS;
+\t}
+}"""
+if "READ_CACHE_SIZE" in d:
+    print("[SKIP] read cache already present")
+else:
+    fails = []
+    if old_top not in d: fails.append("top")
+    if old_rs not in d: fails.append("rs")
+    if old_mid not in d: fails.append("mid")
+    if fails:
+        print(f"[WARN] read cache patterns missing: {fails}")
+    else:
+        d = d.replace(old_top, new_top).replace(old_rs, new_rs).replace(old_mid, new_mid)
+        with open(fp, "w", newline="") as f:
+            f.write(d)
+        print("[OK] dl_operate read cache 256KB")
+
+# ---------- 11. gcc12 compat flags ----------
+for fp, flagline in [
+    (p("bootloader/chipram/config.mk"),
+     "KBUILD_CFLAGS += $(call cc-option,-Wno-error=implicit-function-declaration) $(call cc-option,-Wno-error=implicit-fallthrough) -std=gnu11"),
+    (p("bootloader/u-boot15/Makefile"),
+     "KBUILD_CFLAGS += $(call cc-option,-Wno-error=implicit-function-declaration) -std=gnu11"),
+]:
+    with open(fp, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    if "Wno-error=implicit-function-declaration" not in d:
+        with open(fp, "a", newline="") as f:
+            f.write("\n" + flagline + "\n")
+        print(f"[OK] gcc12 flags -> {os.path.basename(fp)}")
+    else:
+        print(f"[SKIP] gcc12 flags already in {os.path.basename(fp)}")
+
+# ---------- 12. chipram Makefile: only fdl1 ----------
+patch_file("bootloader/chipram/Makefile", [
+    ("ALL +=  spl fdl1 ddr_scan", "ALL +=  fdl1"),
+], "chipram ALL=fdl1")
+
+# ---------- 13. defconfig: disable video/battery ----------
+fp = p("bootloader/u-boot15/configs/ud710_2h10_defconfig")
+with open(fp, "rb") as f:
+    d = f.read().decode("utf-8", errors="replace")
+if "CONFIG_VIDEO is not set" not in d:
+    with open(fp, "a", newline="") as f:
+        f.write("\n# CONFIG_VIDEO is not set\n# CONFIG_POWER_BATTERY is not set\n")
+    print("[OK] defconfig video/battery off")
+else:
+    print("[SKIP] defconfig already modified")
+
+print("\nALL PATCHES DONE")

@@ -1,0 +1,37 @@
+# Build outputs
+out/
+*.o
+*.ko
+*.mod.c
+*.mod
+*.symvers
+*.order
+*.dtb
+*.dtbo
+
+# FDL binaries (from previous builds)
+fdl_output/
+fdl_signed/
+remote_build/
+fdls_minimal/
+*.bin
+
+# Archives
+*.tar
+*.tar.zst
+*.7z
+!ud710_src.tar
+
+# Signing keys (keep out of repo for security)
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp
+*.log
+*.tmp
+/tmp/

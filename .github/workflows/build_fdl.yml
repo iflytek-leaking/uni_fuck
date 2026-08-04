@@ -1,0 +1,126 @@
+name: Build & Sign FDL All Platforms
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────────
+  # 18 路并行编译：每个平台一个独立 runner (4-core x64)
+  # 官方签名：make chipram/bootloader ->
+  #           build_tool_and_sign_images() ->
+  #           packimage.sh -> sprd_sign + imgheaderinsert
+  # ──────────────────────────────────────────────────
+  build:
+    name: ${{ matrix.short }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false   # 一个失败不取消其余
+      matrix:
+        include:
+          # s9863a 系列 (4)
+          - { short: s9863a1c10,  product: s9863a1c10_Natv    }
+          - { short: s9863a1h10,  product: s9863a1h10_Natv    }
+          - { short: s9863a2h10,  product: s9863a2h10_Natv    }
+          - { short: s9863a3c10,  product: s9863a3c10_Natv    }
+          # ums512 系列 (3)
+          - { short: ums512_1h10,  product: ums512_1h10_Natv   }
+          - { short: ums512_20c10, product: ums512_20c10_native }
+          - { short: ums512_2h10,  product: ums512_2h10_Natv   }
+          # sl8541e (1)
+          - { short: sl8541e_1h10, product: sl8541e_1h10_Natv  }
+          # ud710 系列 (8) — SECURE_BOOT=SPRD
+          - { short: ud710_10h10,  product: ud710_10h10_native  }
+          - { short: ud710_20c11,  product: ud710_20c11_native  }
+          - { short: ud710_2c11,   product: ud710_2c11_native   }
+          - { short: ud710_2h10,   product: ud710_2h10_native   }
+          - { short: ud710_2h10u,  product: ud710_2h10u_native  }
+          - { short: ud710_3h10u,  product: ud710_3h10u_native  }
+          - { short: ud710_7h10,   product: ud710_7h10_native   }
+          - { short: ud710_9h10u,  product: ud710_9h10u_native  }
+          # ums7520 系列 (2) — SECURE_BOOT=NONE (no signing)
+          - { short: ums7520_haps, product: ums7520_haps_native }
+          - { short: ums7520_zebu,  product: ums7520_zebu_native  }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            binutils-aarch64-linux-gnu \
+            device-tree-compiler \
+            python3 \
+            bc flex bison \
+            libssl-dev \
+            libc6-i386 lib32z1
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Setup Zig AArch64 cross-compiler
+        run: |
+          bash .github/scripts/setup_zig_tc.sh /tmp/zig-tc
+          export PATH="/tmp/zig-tc:$PATH"
+          echo "int main(){return 0;}" | aarch64-linux-gnu-gcc -x c - -o /tmp/test_aarch64
+          file /tmp/test_aarch64
+
+      - name: Apply source patches
+        run: python3 patch_all.py
+
+      - name: Build & sign
+        run: |
+          export PATH="/tmp/zig-tc:$PATH"
+          export CROSS_COMPILE_TOOLCHAIN="/tmp/zig-tc/"
+          source build/envsetup.sh
+          bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fdl-${{ matrix.short }}
+          path: fdl_output/
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────
+  # 汇总：收集 18 个 job 的产物，打包为单一 artifact
+  # ──────────────────────────────────────────────────
+  collect:
+    name: Collect all artifacts
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fdl-*
+          path: fdl_all
+          merge-multiple: true
+
+      - name: Show summary
+        run: |
+          echo "=== All FDL artifacts ==="
+          echo ""
+          printf "%-20s %10s %10s\n" "Platform" "FDL1" "FDL2"
+          printf "%-20s %10s %10s\n" "--------" "----" "----"
+          for f in fdl_all/*_fdl1.bin; do
+            plat=$(basename "$f" _fdl1.bin)
+            fdl1_sz=$(stat -c%s "$f" 2>/dev/null || echo "MISSING")
+            fdl2="$fdl_all/${plat}_fdl2.bin"
+            fdl2_sz=$(stat -c%s "$fdl2" 2>/dev/null || echo "MISSING")
+            printf "%-20s %10s %10s\n" "$plat" "$fdl1_sz" "$fdl2_sz"
+          done
+          echo ""
+          echo "Total: $(ls fdl_all/*.bin 2>/dev/null | wc -l) files"
+
+      - name: Upload combined artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fdl-all-platforms-signed
+          path: fdl_all/
+          retention-days: 30

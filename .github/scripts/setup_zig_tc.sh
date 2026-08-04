@@ -1,0 +1,54 @@
+#!/bin/bash
+# Setup Zig as aarch64 cross-compiler toolchain
+# Creates wrapper scripts so the build system sees a normal CROSS_COMPILE prefix
+
+set -e
+
+TC_DIR="${1:-/opt/zig-aarch64-tc}"
+ZIG="$(which zig)"
+BINUTILS_PREFIX="aarch64-linux-gnu"
+
+echo "=== Setting up Zig AArch64 toolchain at $TC_DIR ==="
+
+mkdir -p "$TC_DIR"
+
+# ---------- gcc wrapper: zig cc ----------
+cat > "$TC_DIR/${BINUTILS_PREFIX}-gcc" << 'ZIGWRAP'
+#!/bin/bash
+# zig cc: drop flags that clang/zig don't understand
+ARGS=()
+SKIP_NEXT=0
+for arg in "$@"; do
+    if [[ "$SKIP_NEXT" == "1" ]]; then SKIP_NEXT=0; continue; fi
+    case "$arg" in
+        -mabi=lp64|-mgeneral-regs-only|-mthumb-interwork|-mno-thumb-interwork|-marm|-msoft-float|-mshort-load-bytes|-malignment-traps)
+            ;;  # skip GCC-specific ARM flags
+        -mthumb)
+            SKIP_NEXT=1 ;;  # skip -mthumb <arg>
+        *)
+            ARGS+=("$arg") ;;
+    esac
+done
+exec zig cc -target aarch64-linux-gnu "${ARGS[@]}"
+ZIGWRAP
+chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
+
+# ---------- LD wrapper: zig cc (acts as linker) ----------
+cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << 'ZIGWRAP2'
+#!/bin/bash
+exec zig cc -target aarch64-linux-gnu "$@"
+ZIGWRAP2
+chmod +x "$TC_DIR/${BINUTILS_PREFIX}-ld"
+
+# ---------- symlink binutils from system ----------
+for tool in ar objcopy objdump nm ranlib strip readelf; do
+    if command -v "${BINUTILS_PREFIX}-${tool}" &>/dev/null; then
+        ln -sf "$(command -v ${BINUTILS_PREFIX}-${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
+    else
+        # fallback: use host binutils (ok for ELF operations on cross binaries)
+        ln -sf "$(command -v ${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
+    fi
+done
+
+echo "Toolchain ready: $(ls "$TC_DIR" | wc -l) wrappers"
+echo "Zig version: $($ZIG version)"
