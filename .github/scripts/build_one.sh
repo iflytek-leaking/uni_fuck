@@ -21,8 +21,32 @@ if [[ -z "$TC" ]]; then
     exit 1
 fi
 
-# Source BSP env (defines lunch(), make(), etc.)
+# Source BSP env (defines make(), source_configuration, etc.)
+# but we bypass lunch() because its named-input path is broken
+cd "$ROOT"
 source build/envsetup.sh
+
+# Manually find product in device tree (structure: device/<chip>/<os>/<board>/<variant>)
+PRODUCT_PATH=$(find device -maxdepth 4 -mindepth 4 -type d -name "$PRODUCT" 2>/dev/null | head -1)
+if [[ -z "$PRODUCT_PATH" ]]; then
+    echo "ERROR: product '$PRODUCT' not found in device tree"
+    exit 1
+fi
+
+# Parse path components: device/<BSP_SYSTEM_VERSION>/<BSP_PLATFORM_VERSION>/<BSP_BOARD_NAME>/<BSP_PRODUCT_NAME>
+BSP_SYSTEM_VERSION=$(echo "$PRODUCT_PATH" | cut -d/ -f2)
+BSP_PLATFORM_VERSION=$(echo "$PRODUCT_PATH" | cut -d/ -f3)
+BSP_BOARD_NAME=$(echo "$PRODUCT_PATH" | cut -d/ -f4)
+
+export BSP_PRODUCT_NAME="$PRODUCT"
+export BSP_PRODUCT_PATH="$ROOT/$PRODUCT_PATH"
+export BSP_BOARD_NAME
+export BSP_BOARD_PATH="$ROOT/device/$BSP_SYSTEM_VERSION/$BSP_PLATFORM_VERSION/$BSP_BOARD_NAME"
+export BSP_BOARD_BASE_PATH="$BSP_BOARD_PATH/${BSP_BOARD_NAME}_base"
+export BSP_SYSTEM_VERSION
+export BSP_SYSTEM_COMMON="$ROOT/device/$BSP_SYSTEM_VERSION/$BSP_PLATFORM_VERSION"
+export BSP_BUILD_VARIANT="userdebug"
+export BSP_PLATFORM_VERSION
 
 export BSP_CHIPRAM_TOOLCHAIN="$TC"
 export BSP_UBOOT_TOOLCHAIN="$TC"
@@ -31,13 +55,12 @@ export BSP_OBJ="${BSP_OBJ:-$(nproc)}"
 echo "============================================"
 echo "  Platform : $SHORT"
 echo "  Product  : $PRODUCT"
+echo "  Path     : $BSP_PRODUCT_PATH"
+echo "  Chip     : $BSP_SYSTEM_VERSION"
+echo "  OS       : $BSP_PLATFORM_VERSION"
 echo "  Toolchain: $TC"
 echo "  Jobs     : $BSP_OBJ"
 echo "============================================"
-
-echo ""
-echo "--- lunch $PRODUCT ---"
-lunch "$PRODUCT" 2>&1 | tail -3
 
 echo ""
 echo "--- chipram (FDL1) ---"
