@@ -128,6 +128,18 @@ for ddrc in ddrc_files:
             f.write(nd)
         print(f"[OK] ddrc_init.c #error guard -> 0x4000 ({os.path.relpath(ddrc, REPO)})")
 
+# ---------- 4c. mmu.h: ttbr0_el2 sysreg encoding (zig cc / clang asm) ----------
+# clang's integrated assembler rejects "msr ttbr0_el2, %0" ("expected writable
+# system register"), GCC accepts the name. Use the raw sysreg encoding instead.
+patch_file("bootloader/u-boot15/arch/arm/include/asm/armv8/mmu.h", [
+    ('asm volatile("msr ttbr0_el1, %0" : : "r" (table) : "memory");',
+     'asm volatile("msr S3_0_C2_C0_0, %0" : : "r" (table) : "memory");'),
+    ('asm volatile("msr ttbr0_el2, %0" : : "r" (table) : "memory");',
+     'asm volatile("msr S3_4_C2_C0_0, %0" : : "r" (table) : "memory");'),
+    ('asm volatile("msr ttbr0_el3, %0" : : "r" (table) : "memory");',
+     'asm volatile("msr S3_6_C2_C0_0, %0" : : "r" (table) : "memory");'),
+], "mmu.h ttbr0 sysreg encoding")
+
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
     ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
