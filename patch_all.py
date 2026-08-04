@@ -131,14 +131,22 @@ for ddrc in ddrc_files:
 # ---------- 4c. mmu.h: ttbr0_el2 sysreg encoding (zig cc / clang asm) ----------
 # clang's integrated assembler rejects "msr ttbr0_el2, %0" ("expected writable
 # system register"), GCC accepts the name. Use the raw sysreg encoding instead.
-patch_file("bootloader/u-boot15/arch/arm/include/asm/armv8/mmu.h", [
-    ('asm volatile("msr ttbr0_el1, %0" : : "r" (table) : "memory");',
-     'asm volatile("msr S3_0_C2_C0_0, %0" : : "r" (table) : "memory");'),
-    ('asm volatile("msr ttbr0_el2, %0" : : "r" (table) : "memory");',
-     'asm volatile("msr S3_4_C2_C0_0, %0" : : "r" (table) : "memory");'),
-    ('asm volatile("msr ttbr0_el3, %0" : : "r" (table) : "memory");',
-     'asm volatile("msr S3_6_C2_C0_0, %0" : : "r" (table) : "memory");'),
-], "mmu.h ttbr0 sysreg encoding")
+# NOTE: substring replace on the mnemonic only (lines have leading tabs).
+mmu_h = p("bootloader/u-boot15/arch/arm/include/asm/armv8/mmu.h")
+if os.path.exists(mmu_h):
+    with open(mmu_h, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    nd = (d.replace('msr ttbr0_el1, %0', 'msr S3_0_C2_C0_0, %0')
+           .replace('msr ttbr0_el2, %0', 'msr S3_4_C2_C0_0, %0')
+           .replace('msr ttbr0_el3, %0', 'msr S3_6_C2_C0_0, %0'))
+    if nd != d:
+        with open(mmu_h, "w", newline="") as f:
+            f.write(nd)
+        print("[OK] mmu.h ttbr0 sysreg encoding (el1/el2/el3)")
+    else:
+        print("[SKIP] mmu.h ttbr0 already encoded")
+else:
+    print("[SKIP] mmu.h not found")
 
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
