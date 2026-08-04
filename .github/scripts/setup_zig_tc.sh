@@ -38,15 +38,21 @@ chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 # ---------- LD wrapper: zig cc with GNU ld flag translation ----------
 cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << 'ZIGLD'
 #!/bin/bash
-# Translate GNU ld flags to zig cc (clang driver) compatible flags
+# Partial link (-r): use real GNU ld (zig cc doesn't support -Wl,-r)
+for arg in "$@"; do
+    if [[ "$arg" == "-r" ]]; then
+        exec aarch64-linux-gnu-ld "$@"
+    fi
+done
+# Final link: translate GNU ld flags for zig cc, drop -lgcc
 ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -lgcc)
-            shift ;;  # skip: zig provides compiler_rt (replaces libgcc)
+            shift ;;  # skip: zig provides compiler_rt
         -Map)
             shift; ARGS+=("-Wl,-Map" "-Wl,$1"); shift ;;
-        --gc-sections|-Bstatic|-r|--build-id|--no-undefined)
+        --gc-sections|-Bstatic|--build-id|--no-undefined)
             ARGS+=("-Wl,$1"); shift ;;
         *)
             ARGS+=("$1"); shift ;;
