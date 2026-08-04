@@ -95,6 +95,14 @@ if [[ "$TARGET" == "fdl1" || "$TARGET" == "both" ]]; then
         echo "ERROR: chipram build failed (rc=$CHIPRAM_RC)"
         echo "=== error lines from $LOG_FILE ==="
         grep -nE "make\[[0-9]+\]: \*\*\*|make: \*\*\*|fatal|error:|Error [0-9]+|undefined reference|cannot find|No such file|Stop\.|\[zig-cc\]|Missing separator" "$LOG_FILE" | tail -50
+        echo "=== soc_config.h used by build (objtree) ==="
+        cat "$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include/asm/arch/soc_config.h" 2>/dev/null | head -30 || echo "MISSING objtree asm/arch/soc_config.h"
+        echo "=== PACKET macros via asm/arch/soc_config.h (preprocess) ==="
+        echo '#include <asm/arch/soc_config.h>' | /tmp/zig-tc/aarch64-linux-gnu-gcc -E -dM -xc - \
+            -I"$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include" \
+            -I"$ROOT/bootloader/chipram/include" \
+            -nostdinc -isystem /usr/lib/gcc-cross/aarch64-linux-gnu/13/include \
+            2>&1 | grep -E "PACKET_MAX_NUM|MAX_PKT_SIZE" || echo "(PACKET macros NOT defined via asm/arch/soc_config.h)"
         echo "=== last 30 lines of $LOG_FILE ==="
         tail -30 "$LOG_FILE"
         exit 1
