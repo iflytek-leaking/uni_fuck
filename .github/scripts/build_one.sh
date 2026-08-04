@@ -2,7 +2,7 @@
 # Build FDL1+FDL2 for a single platform (called from GitHub Actions matrix)
 # Usage: build_one.sh <short_name> <product_name>
 #   e.g. build_one.sh ud710_2h10 ud710_2h10_native
-# Must run from BSP root after: source build/envsetup.sh
+# Must run from BSP root
 
 set -e
 
@@ -20,6 +20,9 @@ if [[ -z "$TC" ]]; then
     echo "ERROR: set CROSS_COMPILE_TOOLCHAIN=/path/to/zig-tc/"
     exit 1
 fi
+
+# Source BSP env (defines lunch(), make(), etc.)
+source build/envsetup.sh
 
 export BSP_CHIPRAM_TOOLCHAIN="$TC"
 export BSP_UBOOT_TOOLCHAIN="$TC"
