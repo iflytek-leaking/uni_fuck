@@ -96,7 +96,11 @@ if [[ "$TARGET" == "fdl1" || "$TARGET" == "both" ]]; then
         echo "=== error lines from $LOG_FILE ==="
         grep -nE "make\[[0-9]+\]: \*\*\*|make: \*\*\*|fatal|error:|Error [0-9]+|undefined reference|cannot find|No such file|Stop\.|\[zig-cc\]|Missing separator" "$LOG_FILE" | tail -50
         echo "=== soc_config.h used by build (objtree) ==="
-        cat "$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include/asm/arch/soc_config.h" 2>/dev/null | head -30 || echo "MISSING objtree asm/arch/soc_config.h"
+        if [[ -f "$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include/asm/arch/soc_config.h" ]]; then
+            cat "$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include/asm/arch/soc_config.h" | head -30
+        else
+            echo "MISSING objtree asm/arch/soc_config.h"
+        fi
         echo "=== PACKET macros via asm/arch/soc_config.h (preprocess) ==="
         echo '#include <asm/arch/soc_config.h>' | /tmp/zig-tc/aarch64-linux-gnu-gcc -E -dM -xc - \
             -I"$ROOT/out/$BSP_BOARD_NAME/obj/chipram/include" \
