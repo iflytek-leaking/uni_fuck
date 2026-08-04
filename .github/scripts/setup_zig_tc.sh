@@ -35,34 +35,17 @@ exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-func
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 
-# ---------- LD wrapper: zig cc with GNU ld flag translation ----------
-cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << 'ZIGLD'
+# ---------- LD: use real GNU ld (zig cc can't handle -r, --gc-sections, -lgcc, etc.) ----------
+# Find libgcc.a path from gcc-aarch64-linux-gnu package
+LIBGCC_DIR=$(aarch64-linux-gnu-gcc -print-libgcc-file-name 2>/dev/null | xargs dirname 2>/dev/null || echo "/usr/lib/gcc-cross/aarch64-linux-gnu/11")
+cat > "$TC_DIR/${BINUTILS_PREFIX}-ld" << ZIGLD
 #!/bin/bash
-# Partial link (-r): use real GNU ld (zig cc doesn't support -Wl,-r)
-for arg in "$@"; do
-    if [[ "$arg" == "-r" ]]; then
-        exec aarch64-linux-gnu-ld "$@"
-    fi
-done
-# Final link: translate GNU ld flags for zig cc, drop -lgcc
-ARGS=()
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -lgcc)
-            shift ;;  # skip: zig provides compiler_rt
-        -Map)
-            shift; ARGS+=("-Wl,-Map" "-Wl,$1"); shift ;;
-        --gc-sections|-Bstatic|--build-id|--no-undefined)
-            ARGS+=("-Wl,$1"); shift ;;
-        *)
-            ARGS+=("$1"); shift ;;
-    esac
-done
-exec zig cc -target aarch64-linux-gnu "${ARGS[@]}"
+# Use real GNU ld with libgcc path
+exec aarch64-linux-gnu-ld -L ${LIBGCC_DIR} "\$@"
 ZIGLD
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-ld"
 
-# ---------- symlink binutils from system (excluding ld) ----------
+# ---------- symlink binutils from system ----------
 for tool in ar objcopy objdump nm ranlib strip readelf; do
     if command -v "${BINUTILS_PREFIX}-${tool}" &>/dev/null; then
         ln -sf "$(command -v ${BINUTILS_PREFIX}-${tool})" "$TC_DIR/${BINUTILS_PREFIX}-${tool}"
