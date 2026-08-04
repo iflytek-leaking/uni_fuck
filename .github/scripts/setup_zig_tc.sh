@@ -21,8 +21,10 @@ SKIP_NEXT=0
 for arg in "$@"; do
     if [[ "$SKIP_NEXT" == "1" ]]; then SKIP_NEXT=0; continue; fi
     case "$arg" in
-        -mabi=lp64|-mgeneral-regs-only|-mthumb-interwork|-mno-thumb-interwork|-marm|-msoft-float|-mshort-load-bytes|-malignment-traps|-ffixed-r8|-mno-unaligned-access)
+        -mabi=lp64|-mgeneral-regs-only|-mthumb-interwork|-mno-thumb-interwork|-marm|-msoft-float|-mshort-load-bytes|-malignment-traps|-ffixed-r8|-mno-unaligned-access|-mlittle-endian|-mbig-endian)
             ;;  # skip GCC-specific ARM flags
+        -march=*)
+            ;;  # zig targets aarch64 already, -march=armv8-a confuses it
         -mthumb)
             SKIP_NEXT=1 ;;  # skip -mthumb <arg>
         *)
