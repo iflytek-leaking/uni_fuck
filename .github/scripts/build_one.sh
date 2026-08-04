@@ -93,8 +93,10 @@ if [[ "$TARGET" == "fdl1" || "$TARGET" == "both" ]]; then
     CHIPRAM_RC=${PIPESTATUS[0]}
     if [[ $CHIPRAM_RC -ne 0 ]]; then
         echo "ERROR: chipram build failed (rc=$CHIPRAM_RC)"
-        echo "=== last 80 lines of $LOG_FILE ==="
-        tail -80 "$LOG_FILE"
+        echo "=== error lines from $LOG_FILE ==="
+        grep -nE "make\[[0-9]+\]: \*\*\*|make: \*\*\*|fatal|error:|Error [0-9]+|undefined reference|cannot find|No such file|Stop\.|\[zig-cc\]|Missing separator" "$LOG_FILE" | tail -50
+        echo "=== last 30 lines of $LOG_FILE ==="
+        tail -30 "$LOG_FILE"
         exit 1
     fi
 fi
@@ -107,8 +109,10 @@ if [[ "$TARGET" == "fdl2" || "$TARGET" == "both" ]]; then
     BOOTLOADER_RC=${PIPESTATUS[0]}
     if [[ $BOOTLOADER_RC -ne 0 ]]; then
         echo "ERROR: bootloader build failed (rc=$BOOTLOADER_RC)"
-        echo "=== last 80 lines of $LOG_FILE ==="
-        tail -80 "$LOG_FILE"
+        echo "=== error lines from $LOG_FILE ==="
+        grep -nE "make\[[0-9]+\]: \*\*\*|make: \*\*\*|fatal|error:|Error [0-9]+|undefined reference|cannot find|No such file|Stop\.|\[zig-cc\]|Missing separator" "$LOG_FILE" | tail -50
+        echo "=== last 30 lines of $LOG_FILE ==="
+        tail -30 "$LOG_FILE"
         exit 1
     fi
 fi
