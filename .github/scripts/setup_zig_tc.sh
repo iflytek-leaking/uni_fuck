@@ -94,6 +94,11 @@ if [[ "$HAS_S" == "1" && -n "$DEPFILE" && ! -f "$DEPFILE" ]]; then
     echo "${OUTFILE:-output.s}: ${SRCFILE:-unknown}" > "$DEPFILE"
 fi
 
+# Diagnostics: print what zig cc failed on (helps when make swallows output)
+if [[ $RC -ne 0 ]]; then
+    echo "[zig-cc] failed (rc=$RC): zig cc -target aarch64-linux-gnu ${ARGS[*]}" >&2
+fi
+
 exit $RC
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"

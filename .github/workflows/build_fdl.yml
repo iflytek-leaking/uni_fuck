@@ -106,6 +106,15 @@ jobs:
           path: fdl_output/
           retention-days: 30
 
+      - name: Upload build logs (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildlog-${{ matrix.short }}
+          path: build_*.log
+          if-no-files-found: ignore
+          retention-days: 30
+
   # ──────────────────────────────────────────────────
   # 汇总：收集 18 个 job 的产物，打包为单一 artifact
   # ──────────────────────────────────────────────────

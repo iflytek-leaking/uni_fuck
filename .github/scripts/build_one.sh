@@ -58,9 +58,14 @@ export BSP_PLATFORM_VERSION
 # config.mk:     CC = $(CROSS_COMPILE)gcc  →  /tmp/zig-tc/aarch64-linux-gnu-gcc
 export BSP_CHIPRAM_TOOLCHAIN="$TC_PREFIX"
 export BSP_UBOOT_TOOLCHAIN="$TC_PREFIX"
+# BspChipram.mk / BspUBoot.mk use "BSP_OBJ ?= 16", so exporting here
+# actually controls the -jN parallelism (keeps it sane on shared runners).
 export BSP_OBJ="${BSP_OBJ:-$(nproc)}"
-# Synchronize parallel make output by target for clearer error messages
-export MAKEFLAGS="--output-sync=target"
+
+# Build log: tee every make invocation so failures are diagnosable even
+# when GitHub Actions truncates interleaved parallel output.
+LOG_FILE="$ROOT/build_${SHORT}_${TARGET}.log"
+: > "$LOG_FILE"
 
 # Make libgcc.a findable by GNU ld (Makefile has -L . -lgcc)
 LIBGCC=$(aarch64-linux-gnu-gcc -print-libgcc-file-name 2>/dev/null)
@@ -84,10 +89,12 @@ echo "============================================"
 if [[ "$TARGET" == "fdl1" || "$TARGET" == "both" ]]; then
     echo ""
     echo "--- chipram (FDL1) ---"
-    make chipram
-    CHIPRAM_RC=$?
+    make chipram 2>&1 | tee -a "$LOG_FILE"
+    CHIPRAM_RC=${PIPESTATUS[0]}
     if [[ $CHIPRAM_RC -ne 0 ]]; then
         echo "ERROR: chipram build failed (rc=$CHIPRAM_RC)"
+        echo "=== last 80 lines of $LOG_FILE ==="
+        tail -80 "$LOG_FILE"
         exit 1
     fi
 fi
@@ -96,10 +103,12 @@ fi
 if [[ "$TARGET" == "fdl2" || "$TARGET" == "both" ]]; then
     echo ""
     echo "--- bootloader (FDL2) ---"
-    make bootloader
-    BOOTLOADER_RC=$?
+    make bootloader 2>&1 | tee -a "$LOG_FILE"
+    BOOTLOADER_RC=${PIPESTATUS[0]}
     if [[ $BOOTLOADER_RC -ne 0 ]]; then
         echo "ERROR: bootloader build failed (rc=$BOOTLOADER_RC)"
+        echo "=== last 80 lines of $LOG_FILE ==="
+        tail -80 "$LOG_FILE"
         exit 1
     fi
 fi
