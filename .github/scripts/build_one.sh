@@ -1,7 +1,7 @@
 #!/bin/bash
-# Build FDL1+FDL2 for a single platform (called from GitHub Actions matrix)
-# Usage: build_one.sh <short_name> <product_name>
-#   e.g. build_one.sh ud710_2h10 ud710_2h10_native
+# Build FDL1 and/or FDL2 for a single platform (called from GitHub Actions matrix)
+# Usage: build_one.sh <short_name> <product_name> [fdl1|fdl2|both]
+#   e.g. build_one.sh ud710_2h10 ud710_2h10_native fdl1
 # Must run from BSP root
 
 # NOTE: no set -e — _base/common.cfg has readlink -f on deleted toolchain/
@@ -9,6 +9,7 @@
 
 SHORT="$1"
 PRODUCT="$2"
+TARGET="${3:-both}"
 ROOT="${BSP_ROOT_DIR:-$PWD}"
 TC="${CROSS_COMPILE_TOOLCHAIN:-}"
 
@@ -77,32 +78,39 @@ echo "  Toolchain: $TC_PREFIX"
 echo "  Jobs     : $BSP_OBJ"
 echo "============================================"
 
-# Build chipram (FDL1) — make is a shell function from envsetup.sh
-# It calls make_chipram() → source_configuration chipram → bash make.sh bsp
-# Then build_tool_and_sign_images() → packimage.sh → sprd_sign + imgheaderinsert
-echo ""
-echo "--- chipram (FDL1) ---"
-make chipram
-CHIPRAM_RC=$?
-if [[ $CHIPRAM_RC -ne 0 ]]; then
-    echo "ERROR: chipram build failed (rc=$CHIPRAM_RC)"
-    exit 1
+# Build chipram (FDL1)
+if [[ "$TARGET" == "fdl1" || "$TARGET" == "both" ]]; then
+    echo ""
+    echo "--- chipram (FDL1) ---"
+    make chipram
+    CHIPRAM_RC=$?
+    if [[ $CHIPRAM_RC -ne 0 ]]; then
+        echo "ERROR: chipram build failed (rc=$CHIPRAM_RC)"
+        exit 1
+    fi
 fi
 
 # Build bootloader (FDL2)
-echo ""
-echo "--- bootloader (FDL2) ---"
-make bootloader
-BOOTLOADER_RC=$?
-if [[ $BOOTLOADER_RC -ne 0 ]]; then
-    echo "ERROR: bootloader build failed (rc=$BOOTLOADER_RC)"
-    exit 1
+if [[ "$TARGET" == "fdl2" || "$TARGET" == "both" ]]; then
+    echo ""
+    echo "--- bootloader (FDL2) ---"
+    make bootloader
+    BOOTLOADER_RC=$?
+    if [[ $BOOTLOADER_RC -ne 0 ]]; then
+        echo "ERROR: bootloader build failed (rc=$BOOTLOADER_RC)"
+        exit 1
+    fi
 fi
 
 # Collect artifacts
 # BSP dist paths: out/$BSP_BOARD_NAME/dist/<chipram|u-boot15>/
 # Signed files: fdl1-sign.bin / fdl2-sign.bin (SPRD secure boot)
 # Unsigned files: fdl1.bin / fdl2.bin (SECURE_BOOT=NONE, e.g. ums7520)
+if [[ "$TARGET" != "collect" && "$TARGET" != "both" ]]; then
+    echo "=== $SHORT ($TARGET) done ==="
+    exit 0
+fi
+
 echo ""
 echo "--- collecting artifacts ---"
 ARTIFACT_DIR="$ROOT/fdl_output"

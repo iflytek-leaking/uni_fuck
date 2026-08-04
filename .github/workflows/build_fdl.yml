@@ -79,12 +79,23 @@ jobs:
       - name: Apply source patches
         run: python3 patch_all.py
 
-      - name: Build & sign
+      - name: Build FDL1 (chipram)
         run: |
           export PATH="/tmp/zig-tc:$PATH"
           export CROSS_COMPILE_TOOLCHAIN="/tmp/zig-tc/"
           mkdir -p toolchain/prebuilts
-          bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}"
+          bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}" fdl1
+
+      - name: Build FDL2 (bootloader)
+        run: |
+          export PATH="/tmp/zig-tc:$PATH"
+          export CROSS_COMPILE_TOOLCHAIN="/tmp/zig-tc/"
+          bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}" fdl2
+
+      - name: Collect artifacts
+        run: |
+          export PATH="/tmp/zig-tc:$PATH"
+          bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}" collect
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
