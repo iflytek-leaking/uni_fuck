@@ -31,7 +31,7 @@ for arg in "$@"; do
             ARGS+=("$arg") ;;
     esac
 done
-exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error
+exec zig cc -target aarch64-linux-gnu "${ARGS[@]}" -Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types
 ZIGWRAP
 chmod +x "$TC_DIR/${BINUTILS_PREFIX}-gcc"
 
