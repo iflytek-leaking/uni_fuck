@@ -269,16 +269,39 @@ for _rel in ["bootloader/chipram/nand_spl/emmc_boot.c",
 
 # ---------- 4g. zebu (qogirn6pro) secure deps ----------
 # sprd_verify.o is unconditional (obj-y) and calls sprd_set_version/sprd_get_version
-# (defined in sec_efuse_api.c, gated by CONFIG_SECURE_EFUSE) and sprd_rsa_verify
-# (defined in sprd_crypto_sw.c, missing from the SW_CRYPT obj list). qogirn6pro has
-# CONFIG_SECURE_EFUSE commented out -> enable it and add sprd_crypto_sw.o.
+# (defined in sec_efuse_api.c) and sprd_rsa_verify (defined in sprd_crypto_sw.c).
+# qogirn6pro has CONFIG_SECURE_EFUSE commented out -> enable it, compile
+# sec_efuse_api.o unconditionally, and add sprd_crypto_sw.o to SW_CRYPT.
 patch_file("bootloader/chipram/arch/arm/include/asm/arch-qogirn6pro/soc_config.h", [
     ("//#define CONFIG_SECURE_EFUSE", "#define CONFIG_SECURE_EFUSE"),
 ], "qogirn6pro enable CONFIG_SECURE_EFUSE")
 patch_file("bootloader/chipram/secure/sprd/Makefile", [
-    ("obj-$(CONFIG_SW_CRYPT)\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o",
-     "obj-$(CONFIG_SW_CRYPT)\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o"),
-], "secure sprd SW_CRYPT add sprd_crypto_sw.o")
+    ("obj-$(CONFIG_SECURE_EFUSE) += sec_efuse_api.o",
+     "obj-y += sec_efuse_api.o"),
+    ("obj-$(CONFIG_SW_CRYPT)  += pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o",
+     "obj-$(CONFIG_SW_CRYPT)  += pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o"),
+], "secure sprd: unconditional sec_efuse_api.o + SW_CRYPT sprd_crypto_sw.o")
+
+# ---------- 4i. image.c boot_get_kbd HOSTCC guard ----------
+# boot_get_kbd is inside #ifdef CONFIG_SYS_BOOT_GET_KBD (defined for HOSTCC too)
+# and uses bd_t, which image.h only provides in the non-HOSTCC branch -> HOSTCC
+# build of tools/common/image.o fails with "unknown type name 'bd_t'". Guard the
+# definition so HOSTCC skips it (the declaration in image.h is already guarded).
+imgc = p("bootloader/u-boot15/common/image.c")
+if os.path.exists(imgc):
+    with open(imgc, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    old = "int boot_get_kbd(struct lmb *lmb, bd_t **kbd)\n{\n\t*kbd = (bd_t *)(ulong)lmb_alloc_base(lmb, sizeof(bd_t), 0xf,"
+    new = "#ifndef USE_HOSTCC\n" + old
+    d2 = d.replace(old, new)
+    if d2 != d:
+        d2 = d2.replace("}\n#endif /* CONFIG_SYS_BOOT_GET_KBD */",
+                        "}\n#endif /* USE_HOSTCC */\n#endif /* CONFIG_SYS_BOOT_GET_KBD */", 1)
+        with open(imgc, "w", newline="") as f:
+            f.write(d2)
+        print("[OK] image.c boot_get_kbd HOSTCC guard")
+    else:
+        print("[SKIP] image.c boot_get_kbd pattern not found")
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
