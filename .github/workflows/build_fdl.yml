@@ -55,33 +55,70 @@ jobs:
       - name: Install system deps
         timeout-minutes: 15
         run: |
-          # 18 parallel matrix jobs hammer apt on the runner image. apt-get
-          # update is the slowest, most hang-prone op, and the runner image's
-          # package index is fresh enough, so try install FIRST and only fall
-          # back to update if a package can't be found. Every privileged op is
-          # wrapped in `timeout` and apt bounds its lock wait and retries.
+          # 18 parallel matrix jobs hammer apt on the runner image; some
+          # runners stall with NO output for minutes (dpkg lock / unpack IO).
+          # Watchdog: poll the install log every 5s; if no new output for 30s
+          # straight, treat as stalled -> kill apt, clean locks, apt-get
+          # update, and retry (up to 5 attempts).
+          # NOTE: use -q (not -qq): -qq makes apt nearly silent, so the
+          # watchdog would mis-fire on a healthy install. With -q apt prints
+          # "Get:"/"Unpacking" lines continuously while it is progressing.
           export DEBIAN_FRONTEND=noninteractive
           APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120"
-          sudo pkill -f "unattended-upgrades|aptd" 2>/dev/null || true
-          install_pkgs() {
-            timeout 600 sudo apt-get install -y -qq --fix-missing --no-install-recommends $APT_OPTS \
-              binutils-aarch64-linux-gnu \
-              gcc-aarch64-linux-gnu \
-              device-tree-compiler \
-              python3 \
-              bc flex bison \
-              libssl-dev \
-              libc6-i386 lib32z1
+          PKGS="binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu device-tree-compiler python3 bc flex bison libssl-dev"
+
+          apt_cleanup() {
+            sudo pkill -9 -f "apt-get|aptd|unattended-upgrades" 2>/dev/null || true
+            sleep 1
+            sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock \
+                       /var/cache/apt/archives/lock /var/lib/apt/lists/lock
+            sudo dpkg --configure -a 2>/dev/null || true
           }
-          if ! install_pkgs; then
-            echo "direct install failed (missing index?), updating and retrying..."
-            for i in 1 2 3 4 5; do
-              timeout 180 sudo apt-get update -qq --fix-missing $APT_OPTS && break
-              echo "apt-get update attempt $i failed, retrying in 10s..."
-              sleep 10
+
+          apt_with_watchdog() {
+            local attempt=$1 log=/tmp/apt_install.log
+            local stall_limit=6   # 6 polls x 5s = 30s of no output => stalled
+            : > "$log"
+            (sudo apt-get install -y -q --fix-missing --no-install-recommends $APT_OPTS $PKGS > "$log" 2>&1) &
+            local pid=$!
+            local last=0 stall=0
+            while kill -0 $pid 2>/dev/null; do
+              sleep 5
+              local cur=0; [ -f "$log" ] && cur=$(stat -c%s "$log")
+              if [ "$cur" = "$last" ]; then
+                stall=$((stall+1))
+                if [ $stall -ge $stall_limit ]; then
+                  echo "[watchdog] no apt output for $((stall*5))s (attempt $attempt); killing & cleaning"
+                  ps aux | grep -E "apt-get|dpkg" | grep -v grep || true
+                  kill $pid 2>/dev/null; wait $pid 2>/dev/null
+                  apt_cleanup
+                  return 1
+                fi
+              else
+                stall=0
+              fi
+              last=$cur
             done
-            install_pkgs
+            wait $pid; return $?
+          }
+
+          sudo pkill -f "unattended-upgrades|aptd" 2>/dev/null || true
+
+          if apt_with_watchdog 1; then
+            echo "apt install OK (attempt 1)"
+            exit 0
           fi
+
+          for i in 2 3 4 5; do
+            echo "apt attempt $i: updating index then retrying..."
+            timeout 180 sudo apt-get update -q --fix-missing $APT_OPTS
+            if apt_with_watchdog $i; then
+              echo "apt install OK (attempt $i)"
+              exit 0
+            fi
+          done
+          echo "ERROR: apt install failed after 5 attempts"
+          exit 1
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
