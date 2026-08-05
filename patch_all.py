@@ -799,6 +799,7 @@ extern unsigned int sprd_get_secure_boot_enable(void);
 ''')
 
 ensure_file("bootloader/u-boot15/lib/secureboot/sprd/sec_efuse_qogirn6pro.c", r'''#include <secureboot/sec_efuse_qogirn6pro.h>
+#include <secureboot/sec_common.h>
 
 /* Stub implementations for ums7520 (qogirn6pro). No real efuse exists on the
  * haps/zebu sim targets; the API only needs to link for sprd_verify. */
@@ -831,6 +832,24 @@ Efuse_Result_Ret sprd_ce_efuse_huk_program(void)
 }
 
 unsigned int sprd_get_secure_boot_enable(void)
+{
+	return 0;
+}
+
+/* dl_operate.o's emmc_2ndhand_detect is not gc-sections'd away on qogirn6pro,
+ * but lib/trustzone/uboot_drv_rpmb.o (which provides is_wr_rpmb_key) is only
+ * built with CONFIG_SPRD_RPMB, which the ums7520 boards don't set. There is no
+ * real RPMB on the haps/zebu sim targets -> report "no key written". */
+int is_wr_rpmb_key(void)
+{
+	return 0;
+}
+
+/* sec_common.o's vboot_secure_process_init reads anti-rollback versions via
+ * sprd_get_all_imgversion (lib/secureboot/sprd_imgversion.o, CONFIG_SPRD_RPMB).
+ * ums7520 never builds it; the caller zeroed vboot_ver_info first, so leaving
+ * it untouched reports no versions. */
+int sprd_get_all_imgversion(VbootVerInfo *vboot_ver_info)
 {
 	return 0;
 }
