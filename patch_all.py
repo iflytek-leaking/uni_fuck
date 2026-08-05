@@ -274,6 +274,39 @@ auto_fix_implicit_protos([
     "bootloader/u-boot15/common",
 ])
 
+# lib/secureboot is NOT in the auto-proto scan list, but sec_common.c calls
+# vboot_verify_vbmeta (line ~686) before its void definition (~850) with no
+# prototype -> clang sees an int implicit declaration, then "conflicting
+# types". Add the prototype explicitly after the last depth-0 #include.
+sec_common = p("bootloader/u-boot15/lib/secureboot/common/sec_common.c")
+if os.path.exists(sec_common):
+    with open(sec_common, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    proto = "void vboot_verify_vbmeta(char *partition_name);"
+    if proto in d:
+        print("[SKIP] sec_common.c vboot_verify_vbmeta prototype already present")
+    else:
+        lines = d.split("\n")
+        depth = 0
+        last_inc0 = -1
+        for i, ln in enumerate(lines):
+            t = ln.lstrip()
+            if t.startswith("#if"):
+                depth += 1
+            elif t.startswith("#endif"):
+                if depth > 0:
+                    depth -= 1
+            if depth == 0 and ln.startswith("#include"):
+                last_inc0 = i
+        if last_inc0 >= 0:
+            lines.insert(last_inc0 + 1,
+                         "\n/* auto-added prototype (implicit declaration fix) */\n" + proto)
+            with open(sec_common, "w", newline="") as f:
+                f.write("\n".join(lines))
+            print("[OK] sec_common.c vboot_verify_vbmeta prototype added")
+        else:
+            print("[WARN] sec_common.c no depth-0 #include found")
+
 # ---------- 4f. emmc_boot.c / ufs_boot.c: ddrc_print_debug -> printf ----------
 # Generic SPL files call ddrc_print_debug under CONFIG_TEECFG_CUSTOM, but that
 # function only exists in some SoCs' DDR code (orca r1p1_orca, roc1 r1p1) ->
