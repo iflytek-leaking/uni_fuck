@@ -690,6 +690,48 @@ patch_file("device/qogirn6pro/androidq/ums7520_zebu/ums7520_zebu_base/common.cfg
     ('export BSP_PKCS1_PSS_FLAG="true"', 'export BSP_PKCS1_PSS_FLAG=""'),
 ], "ums7520_zebu disable PKCS1_PSS_FLAG")
 
+# ---------- 4r. chipram pk1.c: lowercase padding aliases (SW_CRYPT) ----------
+# chipram/secure/sprd/sprd_rsa_sw.c (built only for SW_CRYPT SoCs such as
+# qogirn6pro/ums7520_zebu) calls the lowercase padding_check_pkcs_type_1 etc.
+# declared in include/security/pk1.h, but chipram's pk1.c defines them with
+# uppercase PKCS1. With BSP_PKCS1_PSS_FLAG off (see 4q) the non-PSS RSA_PubDec
+# in sprd_rsa_sw.o is referenced instead of being gc-sections'd away -> FDL1
+# link fails with "undefined reference to padding_check_pkcs_type_1". Add
+# lowercase wrappers forwarding to the existing uppercase implementations.
+pk1c = p("bootloader/chipram/secure/sprd/pk1.c")
+if os.path.exists(pk1c):
+    with open(pk1c, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    if "padding_check_pkcs_type_1" in d:
+        print("[SKIP] chipram pk1.c lowercase padding aliases already present")
+    else:
+        d += """
+
+/* lowercase aliases (SW_CRYPT sprd_rsa_sw.c calls these names from pk1.h) */
+int padding_add_pkcs_type_1(unsigned char *to, int tlen, const unsigned char *from, int flen)
+{
+	return padding_add_PKCS1_type_1(to, tlen, from, flen);
+}
+
+int padding_check_pkcs_type_1(unsigned char *to, int tlen, const unsigned char *from, int flen, int num)
+{
+	return padding_check_PKCS1_type_1(to, tlen, from, flen, num);
+}
+
+int padding_add_pkcs_type_2(unsigned char *to, int tlen, const unsigned char *from, int flen)
+{
+	return padding_add_PKCS1_type_2(to, tlen, from, flen);
+}
+
+int padding_check_pkcs_type_2(unsigned char *to, int tlen, const unsigned char *from, int flen, int num)
+{
+	return padding_check_PKCS1_type_2(to, tlen, from, flen, num);
+}
+"""
+        with open(pk1c, "w", newline="") as f:
+            f.write(d)
+        print("[OK] chipram pk1.c lowercase padding aliases added")
+
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
 # -> clang "expected member name or ';' after declaration specifiers".
