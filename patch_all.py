@@ -307,6 +307,14 @@ if os.path.exists(sec_common):
         else:
             print("[WARN] sec_common.c no depth-0 #include found")
 
+# sprd_verify.c: "\r\Nosec ..." contains an invalid '\N' escape. GCC tolerates
+# it (prints literal N); clang treats \N as the C23 unicode escape and errors
+# with "expected '{' after '\N'". Use a raw string here so Python does not try
+# to interpret \N as a unicode-name escape.
+patch_file("bootloader/u-boot15/lib/secureboot/sprd/sprd_verify.c", [
+    (r'\r\Nosec rollback version not unified\n', r'\rNosec rollback version not unified\n'),
+], "sprd_verify.c \\N escape fix")
+
 # ---------- 4f. emmc_boot.c / ufs_boot.c: ddrc_print_debug -> printf ----------
 # Generic SPL files call ddrc_print_debug under CONFIG_TEECFG_CUSTOM, but that
 # function only exists in some SoCs' DDR code (orca r1p1_orca, roc1 r1p1) ->
