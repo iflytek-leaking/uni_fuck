@@ -677,6 +677,19 @@ if os.path.exists(lcd_fpga):
         else:
             print("[WARN] lcd_rm69380_fpga_mipi.c no depth-0 #include found")
 
+# ---------- 4q. ums7520_zebu: disable PKCS1_PSS_FLAG ----------
+# BspUBoot.mk adds -DPKCS1_PSS_FLAG when BSP_PKCS1_PSS_FLAG=true. With it,
+# lib/secureboot/sprd/sprd_verify.c includes <sprd_hash.h>/<sprd_rsa.h> and
+# calls sprd_rsa_verify(), which only exist in drivers/crypto/sprd/*. That
+# driver is never built for CONFIG_SOC_QOGIRN6PRO (ums7520_zebu) -> CI fails
+# with "fatal error: 'sprd_hash.h' file not found". The twin platform
+# ums7520_haps runs with PSS off (BSP_PKCS1_PSS_FLAG="") and builds/links
+# fine (sprd_verify.c then uses RSA_PubDec from lib/crypto/sw, which is
+# built for ums7520_zebu). Match it.
+patch_file("device/qogirn6pro/androidq/ums7520_zebu/ums7520_zebu_base/common.cfg", [
+    ('export BSP_PKCS1_PSS_FLAG="true"', 'export BSP_PKCS1_PSS_FLAG=""'),
+], "ums7520_zebu disable PKCS1_PSS_FLAG")
+
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
 # -> clang "expected member name or ';' after declaration specifiers".
