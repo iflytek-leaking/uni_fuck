@@ -15,15 +15,14 @@ fdl_signed/
 remote_build/
 fdls_minimal/
 *.bin
+# Signing keys must be committed (used by sprd_sign in CI)
+!build/packimage_scripts/config/*.bin
 
 # Archives
 *.tar
 *.tar.zst
 *.7z
 !ud710_src.tar
-
-# Signing keys (keep out of repo for security)
-*.pem
 
 # IDE
 .vscode/
