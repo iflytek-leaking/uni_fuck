@@ -570,14 +570,30 @@ sprd_crypto_err_t sprd_crypto_do(
 }
 ''')
 
-patch_file("bootloader/chipram/include/security/sec_efuse.h", [
-    ('#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif',
-     '#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif\n\n#ifdef CONFIG_SOC_QOGIRN6PRO\n#include "sec_efuse_qogirn6pro.h"\n#endif'),
-], "sec_efuse.h add qogirn6pro")
-patch_file("bootloader/chipram/secure/efuse/Makefile", [
-    ("obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o",
-     "obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o\nobj-$(CONFIG_SOC_QOGIRN6PRO) += sec_efuse_qogirn6pro.o"),
-], "efuse Makefile add qogirn6pro")
+# Idempotent guards for the two 4k additions below: the ORCA anchors stay in
+# the file after patching, so a plain patch_file would re-append each run.
+_ch_sec_efuse_h = p("bootloader/chipram/include/security/sec_efuse.h")
+with open(_ch_sec_efuse_h, "rb") as f:
+    _d = f.read().decode("utf-8", errors="replace")
+if '#include "sec_efuse_qogirn6pro.h"' in _d:
+    print("[SKIP] sec_efuse.h add qogirn6pro (chipram)")
+else:
+    _d = _d.replace('#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif',
+                    '#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif\n\n#ifdef CONFIG_SOC_QOGIRN6PRO\n#include "sec_efuse_qogirn6pro.h"\n#endif')
+    with open(_ch_sec_efuse_h, "w", newline="") as f:
+        f.write(_d)
+    print("[OK] sec_efuse.h add qogirn6pro (chipram)")
+_ch_efuse_mk = p("bootloader/chipram/secure/efuse/Makefile")
+with open(_ch_efuse_mk, "rb") as f:
+    _d = f.read().decode("utf-8", errors="replace")
+if "sec_efuse_qogirn6pro.o" in _d:
+    print("[SKIP] efuse Makefile add qogirn6pro (chipram)")
+else:
+    _d = _d.replace("obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o",
+                    "obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o\nobj-$(CONFIG_SOC_QOGIRN6PRO) += sec_efuse_qogirn6pro.o")
+    with open(_ch_efuse_mk, "w", newline="") as f:
+        f.write(_d)
+    print("[OK] efuse Makefile add qogirn6pro (chipram)")
 
 # ---------- 4l. out-of-line instances for inline cp_boot.h getters ----------
 # cp_boot.h defines get_sp_bootcode_size/get_sp_bootcode_buf as plain `inline`
@@ -731,6 +747,112 @@ int padding_check_pkcs_type_2(unsigned char *to, int tlen, const unsigned char *
         with open(pk1c, "w", newline="") as f:
             f.write(d)
         print("[OK] chipram pk1.c lowercase padding aliases added")
+
+# ---------- 4s. u-boot15 qogirn6pro (ums7520) efuse stub ----------
+# lib/secureboot/sprd/sec_efuse_api.o is built unconditionally and includes
+# <secureboot/sec_efuse.h>, which only maps IWHALE2/SC9833/SHARKLJ1/PIKE2/
+# SHARKLE/SHARKL3/SHARKL5/ROC1/ORCA/SHARKL5PRO. QOGIRN6PRO (ums7520_haps/
+# zebu) has no efuse header/driver -> "use of undeclared identifier
+# LOCK_BIT_BLOCK/HUK_BLOCK_START/..." in sec_efuse_api.c. Mirror the chipram
+# 4k stub: lightweight header (sharkl5/roc1 block layout) + stub driver so
+# ums7520 u-boot15 compiles and links.
+ensure_file("bootloader/u-boot15/include/secureboot/sec_efuse_qogirn6pro.h", r'''#ifndef _SEC_EFUSE_QOGIRN6PRO_H_
+#define _SEC_EFUSE_QOGIRN6PRO_H_
+
+/* Minimal efuse mapping/stub for ums7520 (qogirn6pro). Mirrors the
+ * sharkl5/roc1 block layout; the haps/zebu sim targets have no real efuse. */
+typedef enum {
+	EFUSE_RESULT_SUCCESS = 0,
+	EFUSE_RD_ERROR,
+	EFUSE_WR_ERROR,
+	EFUSE_PARAM_ERROR
+} Efuse_Result_Ret;
+
+#define NONE			(255)
+#define HUK_BLOCK_START		(0)
+#define HUK_BLOCK_END		(7)
+#define KCE_BLOCK_START		(8)
+#define KCE_BLOCK_END		(15)
+#define ROTPK0_BLOCK_START	(16)
+#define ROTPK0_BLOCK_END	(23)
+#define SEC_VERSION_BLOCK	(24)
+#define ROTPK1_BLOCK_START	(25)
+#define ROTPK1_BLOCK_END	(32)
+#define CYCLE_STATE_BLOCK	(33)
+#define LOCK_BIT_BLOCK		(34)
+#define NSEC_VER_BLOCK_START	(36)
+#define NSEC_VER_BLOCK_END	(42)
+#define RESERVED_BLOCK_START	(NONE)
+#define RESERVED_BLOCK_END	(NONE)
+#define ENDORKEY_BLOCK_START	(NONE)
+#define ENDORKEY_BLOCK_END	(NONE)
+#define PUBLIC_EFUSE_BLOCK2	(66)
+#define RMA_MODE_BIT		(0)
+
+extern Efuse_Result_Ret sprd_ce_efuse_huk_program(void);
+extern Efuse_Result_Ret sprd_get_lock_bits(unsigned int start_id, unsigned int end_id, unsigned int *bits_data, unsigned int *bits_data1);
+extern Efuse_Result_Ret sprd_ce_efuse_read(unsigned int block_id, unsigned int *read_ptr);
+extern Efuse_Result_Ret sprd_ce_efuse_program(unsigned int block_id, unsigned int WriteData);
+extern unsigned int sprd_get_secure_boot_enable(void);
+
+#endif
+''')
+
+ensure_file("bootloader/u-boot15/lib/secureboot/sprd/sec_efuse_qogirn6pro.c", r'''#include <secureboot/sec_efuse_qogirn6pro.h>
+
+/* Stub implementations for ums7520 (qogirn6pro). No real efuse exists on the
+ * haps/zebu sim targets; the API only needs to link for sprd_verify. */
+
+Efuse_Result_Ret sprd_ce_efuse_read(unsigned int block_id, unsigned int *read_ptr)
+{
+	if (read_ptr)
+		*read_ptr = 0;
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_ce_efuse_program(unsigned int block_id, unsigned int WriteData)
+{
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_get_lock_bits(unsigned int start_id, unsigned int end_id,
+				    unsigned int *bits_data, unsigned int *bits_data1)
+{
+	if (bits_data)
+		*bits_data = 0;
+	if (bits_data1)
+		*bits_data1 = 0;
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_ce_efuse_huk_program(void)
+{
+	return EFUSE_RESULT_SUCCESS;
+}
+
+unsigned int sprd_get_secure_boot_enable(void)
+{
+	return 0;
+}
+''')
+
+patch_file("bootloader/u-boot15/include/secureboot/sec_efuse.h", [
+    ('#ifdef CONFIG_SOC_SHARKL5PRO\n#include "sec_efuse_sharkl5pro.h"\n#endif\n#endif',
+     '#ifdef CONFIG_SOC_SHARKL5PRO\n#include "sec_efuse_sharkl5pro.h"\n#endif\n\n#ifdef CONFIG_SOC_QOGIRN6PRO\n#include "sec_efuse_qogirn6pro.h"\n#endif\n#endif'),
+], "u-boot15 sec_efuse.h add qogirn6pro")
+# Guarded append (ORCA anchor stays in the file, so a plain patch_file would
+# re-append the qogirn6pro line on every run -> duplicate obj-y entries).
+_sprd_mk15 = p("bootloader/u-boot15/lib/secureboot/sprd/Makefile")
+with open(_sprd_mk15, "rb") as f:
+    _d = f.read().decode("utf-8", errors="replace")
+if "obj-y += sec_efuse_qogirn6pro.o" in _d:
+    print("[SKIP] u-boot15 sprd Makefile add qogirn6pro efuse")
+else:
+    _d = _d.replace("ifneq ($(CONFIG_SOC_ORCA),)\nobj-y += sec_efuse_orca.o\nobj-y += sec_efuse_orca_drv.o\nendif",
+                    "ifneq ($(CONFIG_SOC_ORCA),)\nobj-y += sec_efuse_orca.o\nobj-y += sec_efuse_orca_drv.o\nendif\nifneq ($(CONFIG_SOC_QOGIRN6PRO),)\nobj-y += sec_efuse_qogirn6pro.o\nendif")
+    with open(_sprd_mk15, "w", newline="") as f:
+        f.write(_d)
+    print("[OK] u-boot15 sprd Makefile add qogirn6pro efuse")
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
