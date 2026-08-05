@@ -97,6 +97,7 @@ jobs:
       - name: Collect artifacts
         run: |
           export PATH="/tmp/zig-tc:$PATH"
+          export CROSS_COMPILE_TOOLCHAIN="/tmp/zig-tc/"
           bash .github/scripts/build_one.sh "${{ matrix.short }}" "${{ matrix.product }}" collect
 
       - name: Upload artifacts

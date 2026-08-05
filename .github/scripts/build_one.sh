@@ -18,7 +18,8 @@ if [[ -z "$SHORT" || -z "$PRODUCT" ]]; then
     exit 1
 fi
 
-if [[ -z "$TC" ]]; then
+# Toolchain is only needed for actual builds (fdl1/fdl2), not for 'collect'.
+if [[ -z "$TC" && "$TARGET" != "collect" ]]; then
     echo "ERROR: set CROSS_COMPILE_TOOLCHAIN=/path/to/zig-tc/"
     exit 1
 fi
