@@ -41,7 +41,7 @@ obj-y += sec_efuse_orca.o
 obj-y += sec_efuse_orca_drv.o
 endif
 
-ifneq ($(CONFIG_SC9833)$(CONFIG_SOC_SHARKLJ1)$(CONFIG_SPRD_SOC_SP9853I),)
+ifneq ($(CONFIG_SC9833)$(CONFIG_SOC_SHARKLJ1)$(CONFIG_SPRD_SOC_SP9853I)$(CONFIG_SOC_QOGIRN6PRO),)
 ccflags-y := -I$(srctree)/drivers/crypto/sprd/r3p0/inc
 endif
 
