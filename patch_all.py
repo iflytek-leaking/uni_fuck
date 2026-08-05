@@ -275,33 +275,65 @@ for _rel in ["bootloader/chipram/nand_spl/emmc_boot.c",
 patch_file("bootloader/chipram/arch/arm/include/asm/arch-qogirn6pro/soc_config.h", [
     ("//#define CONFIG_SECURE_EFUSE", "#define CONFIG_SECURE_EFUSE"),
 ], "qogirn6pro enable CONFIG_SECURE_EFUSE")
-patch_file("bootloader/chipram/secure/sprd/Makefile", [
-    ("obj-$(CONFIG_SECURE_EFUSE) += sec_efuse_api.o",
-     "obj-y += sec_efuse_api.o"),
-    ("obj-$(CONFIG_SW_CRYPT)  += pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o",
-     "obj-$(CONFIG_SW_CRYPT)  += pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o"),
-], "secure sprd: unconditional sec_efuse_api.o + SW_CRYPT sprd_crypto_sw.o")
+# secure/sprd/Makefile: sec_efuse_api.o unconditional; add sprd_crypto_sw.o to the
+# non-ORCA SW_CRYPT line. The obj line uses a TAB after CONFIG_SW_CRYPT, so match
+# with a regex instead of a fixed string.
+sprd_mk = p("bootloader/chipram/secure/sprd/Makefile")
+if os.path.exists(sprd_mk):
+    with open(sprd_mk, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    d2 = d.replace("obj-$(CONFIG_SECURE_EFUSE) += sec_efuse_api.o",
+                   "obj-y += sec_efuse_api.o")
+    # NOTE: the ORCA branch above already lists sprd_crypto_sw.o, so a plain
+    # file-wide "sprd_crypto_sw.o in d2" check is wrong. Anchor to end of line
+    # so the non-ORCA line is the only one touched and the patch is idempotent.
+    d2, n = re.subn(
+        r'(obj-\$\(CONFIG_SW_CRYPT\))[ \t]+\+=\s*pk1\.o sec_string\.o sprd_sha256_sw\.o sprd_rsa_sw\.o$',
+        r'\1\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o',
+        d2, flags=re.MULTILINE)
+    if n:
+        print(f"[OK] secure sprd: SW_CRYPT add sprd_crypto_sw.o ({n} line)")
+    elif "sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o" in d2:
+        print("[SKIP] secure sprd: sprd_crypto_sw.o already in non-ORCA SW_CRYPT")
+    else:
+        print("[WARN] secure sprd: SW_CRYPT pattern not found")
+    if d2 != d:
+        with open(sprd_mk, "w", newline="") as f:
+            f.write(d2)
+        print("[OK] secure sprd: sec_efuse_api.o unconditional")
 
 # ---------- 4i. image.c boot_get_kbd HOSTCC guard ----------
-# boot_get_kbd is inside #ifdef CONFIG_SYS_BOOT_GET_KBD (defined for HOSTCC too)
-# and uses bd_t, which image.h only provides in the non-HOSTCC branch -> HOSTCC
-# build of tools/common/image.o fails with "unknown type name 'bd_t'". Guard the
-# definition so HOSTCC skips it (the declaration in image.h is already guarded).
+# auto-proto (4e) inserts a boot_get_kbd prototype into the HOSTCC-visible
+# section of image.c (after the last #include, before any #ifdef). bd_t is not
+# defined under USE_HOSTCC -> HOSTCC build of tools/common/image.o fails with
+# "image.c:75:35: unknown type name 'bd_t'". image.h:563-565 already declares
+# boot_get_kbd under #ifdef CONFIG_SYS_BOOT_GET_KBD, so drop the redundant
+# prototype; also guard the definition so HOSTCC skips it.
 imgc = p("bootloader/u-boot15/common/image.c")
 if os.path.exists(imgc):
     with open(imgc, "rb") as f:
         d = f.read().decode("utf-8", errors="replace")
+    changed = False
+    proto = "int boot_get_kbd(struct lmb *lmb, bd_t **kbd);\n"
+    if proto in d:
+        d = d.replace(proto, "", 1)
+        changed = True
+        print("[OK] image.c removed redundant boot_get_kbd prototype")
     old = "int boot_get_kbd(struct lmb *lmb, bd_t **kbd)\n{\n\t*kbd = (bd_t *)(ulong)lmb_alloc_base(lmb, sizeof(bd_t), 0xf,"
-    new = "#ifndef USE_HOSTCC\n" + old
-    d2 = d.replace(old, new)
-    if d2 != d:
-        d2 = d2.replace("}\n#endif /* CONFIG_SYS_BOOT_GET_KBD */",
-                        "}\n#endif /* USE_HOSTCC */\n#endif /* CONFIG_SYS_BOOT_GET_KBD */", 1)
-        with open(imgc, "w", newline="") as f:
-            f.write(d2)
-        print("[OK] image.c boot_get_kbd HOSTCC guard")
+    if old in d:
+        if "#ifndef USE_HOSTCC\nint boot_get_kbd" in d:
+            print("[SKIP] image.c boot_get_kbd HOSTCC guard already present")
+        else:
+            d = d.replace(old, "#ifndef USE_HOSTCC\n" + old)
+            d = d.replace("}\n#endif /* CONFIG_SYS_BOOT_GET_KBD */",
+                          "}\n#endif /* USE_HOSTCC */\n#endif /* CONFIG_SYS_BOOT_GET_KBD */", 1)
+            changed = True
+            print("[OK] image.c boot_get_kbd HOSTCC guard")
     else:
-        print("[SKIP] image.c boot_get_kbd pattern not found")
+        print("[WARN] image.c boot_get_kbd definition pattern not found")
+    if changed:
+        with open(imgc, "w", newline="") as f:
+            f.write(d)
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
@@ -310,7 +342,7 @@ exfat = p("bootloader/u-boot15/include/exfat.h")
 if os.path.exists(exfat):
     with open(exfat, "rb") as f:
         d = f.read().decode("utf-8", errors="replace")
-    nd = d.replace("}\nexfat_file_entry;", "};\nexfat_file_entry;")
+    nd = d.replace("\t}\n}exfat_file_entry;", "\t};\n}exfat_file_entry;")
     if nd != d:
         with open(exfat, "w", newline="") as f:
             f.write(nd)
