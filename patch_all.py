@@ -216,6 +216,11 @@ def auto_fix_implicit_protos(dirs):
                 for j in range(def_idx):
                     if not _re.search(r'\b' + _re.escape(name) + r'\s*\(', lines[j]):
                         continue
+                    # skip comment lines (function names inside // or /* */
+                    # blocks are not call sites, e.g. fdt_support.c's doc comment
+                    # " * fdt_fixup_mtdparts(blob, nodes, ARRAY_SIZE(nodes));")
+                    if lines[j].lstrip().startswith(('//', '*', '/*')):
+                        continue
                     # skip lines that are themselves definitions (same-name
                     # overloads/conditional variants would otherwise count as calls)
                     if def_re.match(lines[j]):
@@ -237,19 +242,26 @@ def auto_fix_implicit_protos(dirs):
                     if proto not in lines and not any(p == proto for p in protos):
                         protos.append(proto)
             if protos:
-                # Insert after the FIRST #include so the prototypes sit in the
-                # unconditional top-of-file section. Using the LAST #include can
-                # land inside an #ifdef block (e.g. fastboot.c's
-                # CONFIG_NAND_BOOT includes), hiding the prototypes from code
-                # outside that block -> implicit declarations reappear.
-                first_inc = -1
+                # Insert after the LAST #include that sits at preprocessor depth
+                # 0 (outside any #if/#ifdef/#ifndef). This keeps the prototypes
+                # in the unconditional top-of-file section (a #ifdef'd last
+                # include, e.g. fastboot.c's CONFIG_NAND_BOOT block, would hide
+                # them) while still being AFTER every unconditional include so
+                # types used by the prototypes are already declared.
+                depth = 0
+                last_inc0 = -1
                 for i, ln in enumerate(lines):
-                    if ln.startswith("#include"):
-                        first_inc = i
-                        break
-                if first_inc >= 0:
+                    t = ln.lstrip()
+                    if t.startswith("#if"):
+                        depth += 1
+                    elif t.startswith("#endif"):
+                        if depth > 0:
+                            depth -= 1
+                    if depth == 0 and ln.startswith("#include"):
+                        last_inc0 = i
+                if last_inc0 >= 0:
                     insert = ["", "/* auto-added prototypes (implicit declaration fix) */"] + protos + [""]
-                    lines[first_inc + 1:first_inc + 1] = insert
+                    lines[last_inc0 + 1:last_inc0 + 1] = insert
                     with open(fp, "w", newline="") as f:
                         f.write("\n".join(lines))
                     fixed_files += 1
@@ -360,6 +372,120 @@ if os.path.exists(imgc):
 patch_file("bootloader/u-boot15/drivers/Makefile", [
     ("obj-y += ufs/", "obj-$(CONFIG_UFS) += ufs/"),
 ], "drivers ufs conditional on CONFIG_UFS")
+
+# ---------- 4k. qogirn6pro (ums7520) efuse stub ----------
+# sec_efuse_api.o is built unconditionally (needed by sprd_verify.o's
+# sprd_set_version/sprd_get_version) but qogirn6pro has no efuse header/driver
+# (sec_efuse.h only maps WHALE/SHARK/ROC1/ORCA/PIKE2 chips). Provide a
+# lightweight header with the block macros (roc1 layout) plus a stub driver so
+# the SECURE_BOOT=NONE haps/zebu targets compile and link.
+def ensure_file(rel, content):
+    fp = p(rel)
+    if os.path.exists(fp):
+        print(f"[SKIP] ensure_file {rel} (exists)")
+        return
+    os.makedirs(os.path.dirname(fp), exist_ok=True)
+    with open(fp, "w", newline="") as f:
+        f.write(content)
+    print(f"[OK] ensure_file {rel}")
+
+ensure_file("bootloader/chipram/include/security/sec_efuse_qogirn6pro_drv.h", r'''#ifndef _SEC_EFUSE_QOGIRN6PRO_DRV_H_
+#define _SEC_EFUSE_QOGIRN6PRO_DRV_H_
+
+/* Minimal driver header for ums7520 (qogirn6pro). SECURE_BOOT=NONE sim
+ * platforms only need the efuse API to link; there is no real efuse driver. */
+typedef enum {
+	EFUSE_RESULT_SUCCESS = 0,
+	EFUSE_RD_ERROR,
+	EFUSE_WR_ERROR,
+	EFUSE_PARAM_ERROR
+} Efuse_Result_Ret;
+
+#endif
+''')
+
+ensure_file("bootloader/chipram/include/security/sec_efuse_qogirn6pro.h", r'''#ifndef _SEC_EFUSE_QOGIRN6PRO_H_
+#define _SEC_EFUSE_QOGIRN6PRO_H_
+
+#include "sec_efuse_qogirn6pro_drv.h"
+
+/* EFUSE block mapping (mirrors roc1 layout; unused on NONE-secure sim). */
+#define NONE			(255)
+#define HUK_BLOCK_START		(0)
+#define HUK_BLOCK_END		(7)
+#define KCE_BLOCK_START		(8)
+#define KCE_BLOCK_END		(15)
+#define ROTPK0_BLOCK_START	(16)
+#define ROTPK0_BLOCK_END	(23)
+#define SEC_VERSION_BLOCK	(24)
+#define ROTPK1_BLOCK_START	(25)
+#define ROTPK1_BLOCK_END	(32)
+#define CYCLE_STATE_BLOCK	(33)
+#define LOCK_BIT_BLOCK		(34)
+#define NSEC_VER_BLOCK_START	(36)
+#define NSEC_VER_BLOCK_END	(42)
+#define RESERVED_BLOCK_START	(NONE)
+#define RESERVED_BLOCK_END	(NONE)
+#define ENDORKEY_BLOCK_START	(NONE)
+#define ENDORKEY_BLOCK_END	(NONE)
+#define PUBLIC_EFUSE_BLOCK2	(66)
+#define RMA_MODE_BIT		(0)
+
+extern Efuse_Result_Ret sprd_ce_efuse_huk_program(void);
+extern Efuse_Result_Ret sprd_get_lock_bits(unsigned int start_id, unsigned int end_id, unsigned int *bits_data, unsigned int *bits_data1);
+extern Efuse_Result_Ret sprd_ce_efuse_read(unsigned int block_id, unsigned int *read_ptr);
+extern Efuse_Result_Ret sprd_ce_efuse_program(unsigned int block_id, unsigned int WriteData);
+extern unsigned int sprd_get_secure_boot_enable(void);
+
+#endif
+''')
+
+ensure_file("bootloader/chipram/secure/efuse/sec_efuse_qogirn6pro.c", r'''#include <security/sec_efuse_qogirn6pro.h>
+
+/* Stub implementations for ums7520 (SECURE_BOOT=NONE). No real efuse exists
+ * on the haps/zebu sim targets; the API only needs to link for sprd_verify. */
+
+Efuse_Result_Ret sprd_ce_efuse_read(unsigned int block_id, unsigned int *read_ptr)
+{
+	if (read_ptr)
+		*read_ptr = 0;
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_ce_efuse_program(unsigned int block_id, unsigned int WriteData)
+{
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_get_lock_bits(unsigned int start_id, unsigned int end_id,
+				    unsigned int *bits_data, unsigned int *bits_data1)
+{
+	if (bits_data)
+		*bits_data = 0;
+	if (bits_data1)
+		*bits_data1 = 0;
+	return EFUSE_RESULT_SUCCESS;
+}
+
+Efuse_Result_Ret sprd_ce_efuse_huk_program(void)
+{
+	return EFUSE_RESULT_SUCCESS;
+}
+
+unsigned int sprd_get_secure_boot_enable(void)
+{
+	return 0;
+}
+''')
+
+patch_file("bootloader/chipram/include/security/sec_efuse.h", [
+    ('#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif',
+     '#ifdef CONFIG_SOC_ORCA\n#include "sec_efuse_orca.h"\n#endif\n\n#ifdef CONFIG_SOC_QOGIRN6PRO\n#include "sec_efuse_qogirn6pro.h"\n#endif'),
+], "sec_efuse.h add qogirn6pro")
+patch_file("bootloader/chipram/secure/efuse/Makefile", [
+    ("obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o",
+     "obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o\nobj-$(CONFIG_SOC_QOGIRN6PRO) += sec_efuse_qogirn6pro.o"),
+], "efuse Makefile add qogirn6pro")
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
