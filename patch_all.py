@@ -315,6 +315,39 @@ patch_file("bootloader/u-boot15/lib/secureboot/sprd/sprd_verify.c", [
     (r'\r\Nosec rollback version not unified\n', r'\rNosec rollback version not unified\n'),
 ], "sprd_verify.c \\N escape fix")
 
+# u-boot15/drivers/ufs/sprd_ufs.c was never compiled before (the ufs/ dir only
+# builds under CONFIG_UFS, which 4j gated). Its reset_and_restore_hc() is called
+# at line ~319 before the void definition at ~948 -> conflicting types under
+# clang. Same fix as the chipram copy: add a prototype.
+ufs_c = p("bootloader/u-boot15/drivers/ufs/sprd_ufs.c")
+if os.path.exists(ufs_c):
+    with open(ufs_c, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    proto = "void reset_and_restore_hc(void);"
+    if proto in d:
+        print("[SKIP] u-boot15 sprd_ufs.c reset_and_restore_hc prototype already present")
+    else:
+        lines = d.split("\n")
+        depth = 0
+        last_inc0 = -1
+        for i, ln in enumerate(lines):
+            t = ln.lstrip()
+            if t.startswith("#if"):
+                depth += 1
+            elif t.startswith("#endif"):
+                if depth > 0:
+                    depth -= 1
+            if depth == 0 and ln.startswith("#include"):
+                last_inc0 = i
+        if last_inc0 >= 0:
+            lines.insert(last_inc0 + 1,
+                         "\n/* auto-added prototype (implicit declaration fix) */\n" + proto)
+            with open(ufs_c, "w", newline="") as f:
+                f.write("\n".join(lines))
+            print("[OK] u-boot15 sprd_ufs.c reset_and_restore_hc prototype added")
+        else:
+            print("[WARN] u-boot15 sprd_ufs.c no depth-0 #include found")
+
 # ---------- 4f. emmc_boot.c / ufs_boot.c: ddrc_print_debug -> printf ----------
 # Generic SPL files call ddrc_print_debug under CONFIG_TEECFG_CUSTOM, but that
 # function only exists in some SoCs' DDR code (orca r1p1_orca, roc1 r1p1) ->
@@ -357,14 +390,17 @@ if os.path.exists(sprd_mk):
     # NOTE: the ORCA branch above already lists sprd_crypto_sw.o, so a plain
     # file-wide "sprd_crypto_sw.o in d2" check is wrong. Anchor to end of line
     # so the non-ORCA line is the only one touched and the patch is idempotent.
+    # sprd_crypto_sw.c's sprd_rsa_verify calls sprd_pkcs1_v1_5_decode /
+    # sprd_pkcs1_pss_decode, so the pkcs1 objects must be in the SW_CRYPT list
+    # too (the ORCA branch already includes them).
     d2, n = re.subn(
         r'(obj-\$\(CONFIG_SW_CRYPT\))[ \t]+\+=\s*pk1\.o sec_string\.o sprd_sha256_sw\.o sprd_rsa_sw\.o$',
-        r'\1\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o',
+        r'\1\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o sprd_pkcs1_mgf1.o sprd_pkcs1_pss.o sprd_pkcs1_v1_5.o',
         d2, flags=re.MULTILINE)
     if n:
-        print(f"[OK] secure sprd: SW_CRYPT add sprd_crypto_sw.o ({n} line)")
-    elif "sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o" in d2:
-        print("[SKIP] secure sprd: sprd_crypto_sw.o already in non-ORCA SW_CRYPT")
+        print(f"[OK] secure sprd: SW_CRYPT add sprd_crypto_sw.o + pkcs1 ({n} line)")
+    elif "sprd_rsa_sw.o sprd_crypto_sw.o sprd_pkcs1_mgf1.o sprd_pkcs1_pss.o sprd_pkcs1_v1_5.o" in d2:
+        print("[SKIP] secure sprd: sprd_crypto_sw.o + pkcs1 already in non-ORCA SW_CRYPT")
     else:
         print("[WARN] secure sprd: SW_CRYPT pattern not found")
     if d2 != d:
