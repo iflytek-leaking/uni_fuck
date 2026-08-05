@@ -135,6 +135,29 @@ jobs:
           path: fdl_all
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: buildlog-*
+          path: build_logs
+          merge-multiple: true
+          if-no-files-found: ignore
+
+      - name: Summarize all build errors
+        if: always()
+        run: |
+          mkdir -p err_summary
+          : > err_summary/all_errors.txt
+          for log in build_logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "===== $log =====" >> err_summary/all_errors.txt
+            grep -nE "error:|Error [0-9]+|undefined reference|fatal error|No rule to make|make: \*\*\*|\[zig-cc\]" "$log" | tail -40 >> err_summary/all_errors.txt
+            echo "" >> err_summary/all_errors.txt
+          done
+          echo "=================== ALL BUILD ERRORS ==================="
+          cat err_summary/all_errors.txt
+          echo "========================================================="
+          echo "Total error lines: $(wc -l < err_summary/all_errors.txt)"
+
       - name: Show summary
         run: |
           echo "=== All FDL artifacts ==="
@@ -177,6 +200,15 @@ jobs:
         with:
           name: fdl-all-platforms-signed
           path: fdl_all/
+          retention-days: 30
+
+      - name: Upload error summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-summary
+          path: err_summary/
+          if-no-files-found: ignore
           retention-days: 30
 
       # ── 发布到 GitHub Releases（push 到 main/master，或手动触发） ──

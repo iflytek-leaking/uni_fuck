@@ -239,6 +239,34 @@ auto_fix_implicit_protos([
     "bootloader/chipram/nand_spl/ufs",
 ])
 
+# ---------- 4f. Generic ddrc_print_debug for non-orca platforms ----------
+# emmc_boot.c / ufs_boot.c (generic SPL) call ddrc_print_debug under
+# CONFIG_TEECFG_CUSTOM, but it is only defined in the orca DDR code
+# (r1p1_orca/ddrc_r1p1_common.c) -> undefined reference on all other SoCs.
+emmc = p("bootloader/chipram/nand_spl/emmc_boot.c")
+if os.path.exists(emmc):
+    with open(emmc, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    marker = "/* generic ddrc_print_debug (non-orca) */"
+    if marker not in d:
+        d += """
+
+/* generic ddrc_print_debug for platforms without the orca DDR implementation */
+#ifndef CONFIG_SOC_ORCA
+void ddrc_print_debug(const char *string)
+{
+	printf("%s", string);
+}
+#endif
+"""
+        with open(emmc, "w", newline="") as f:
+            f.write(d)
+        print("[OK] emmc_boot.c generic ddrc_print_debug added")
+    else:
+        print("[SKIP] emmc_boot.c ddrc_print_debug already present")
+else:
+    print("[SKIP] emmc_boot.c not found")
+
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
     ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
