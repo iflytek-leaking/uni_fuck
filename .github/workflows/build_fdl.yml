@@ -142,7 +142,7 @@ jobs:
           merge-multiple: true
           if-no-files-found: ignore
 
-      - name: Summarize all build errors
+      - name: Summarize all build logs
         if: always()
         run: |
           mkdir -p err_summary
@@ -150,13 +150,15 @@ jobs:
           for log in build_logs/*.log; do
             [ -f "$log" ] || continue
             echo "===== $log =====" >> err_summary/all_errors.txt
-            grep -nE "error:|Error [0-9]+|undefined reference|fatal error|No rule to make|make: \*\*\*|\[zig-cc\]" "$log" | tail -40 >> err_summary/all_errors.txt
+            # Include the FULL log so errors can be diagnosed with surrounding
+            # context, not just grep'd one-liners.
+            cat "$log" >> err_summary/all_errors.txt
             echo "" >> err_summary/all_errors.txt
           done
-          echo "=================== ALL BUILD ERRORS ==================="
+          echo "=================== ALL BUILD LOGS ==================="
           cat err_summary/all_errors.txt
           echo "========================================================="
-          echo "Total error lines: $(wc -l < err_summary/all_errors.txt)"
+          echo "Total lines: $(wc -l < err_summary/all_errors.txt)"
 
       - name: Show summary
         run: |
