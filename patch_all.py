@@ -22,7 +22,8 @@ def patch_file(rel, pairs, label, count=0):
         if old not in data:
             print(f"[WARN] {label}: pattern not found: {old[:50]!r}")
             continue
-        data = data.replace(old, new, count)
+        # count=0 must mean "replace all" (str.replace(old,new,0) does nothing)
+        data = data.replace(old, new, count if count > 0 else -1)
     if data != orig:
         with open(fp, "w", newline="") as f:
             f.write(data)
@@ -219,6 +220,16 @@ def auto_fix_implicit_protos(dirs):
                     # overloads/conditional variants would otherwise count as calls)
                     if def_re.match(lines[j]):
                         continue
+                    # skip the OPENING line of a multi-line definition such as
+                    # "static int do_bdinfo(cmd_tbl_t *cmdtp, int flag, int argc,"
+                    # (fn_name( ... with NO closing ')' on the line and a return
+                    # type before the name). Those are not call sites; treating
+                    # them as calls spuriously protos every other definition.
+                    if _re.match(
+                            r'^(?:static\s+|inline\s+|__inline\s+|const\s+|volatile\s+)*'
+                            r'\w[\w\s\*]*?\s+' + _re.escape(name) + r'\s*\([^)]*$',
+                            lines[j]):
+                        continue
                     called_before = True
                     break
                 if called_before:
@@ -226,13 +237,19 @@ def auto_fix_implicit_protos(dirs):
                     if proto not in lines and not any(p == proto for p in protos):
                         protos.append(proto)
             if protos:
-                last_inc = -1
+                # Insert after the FIRST #include so the prototypes sit in the
+                # unconditional top-of-file section. Using the LAST #include can
+                # land inside an #ifdef block (e.g. fastboot.c's
+                # CONFIG_NAND_BOOT includes), hiding the prototypes from code
+                # outside that block -> implicit declarations reappear.
+                first_inc = -1
                 for i, ln in enumerate(lines):
                     if ln.startswith("#include"):
-                        last_inc = i
-                if last_inc >= 0:
+                        first_inc = i
+                        break
+                if first_inc >= 0:
                     insert = ["", "/* auto-added prototypes (implicit declaration fix) */"] + protos + [""]
-                    lines[last_inc + 1:last_inc + 1] = insert
+                    lines[first_inc + 1:first_inc + 1] = insert
                     with open(fp, "w", newline="") as f:
                         f.write("\n".join(lines))
                     fixed_files += 1
@@ -334,6 +351,15 @@ if os.path.exists(imgc):
     if changed:
         with open(imgc, "w", newline="") as f:
             f.write(d)
+
+# ---------- 4j. drivers/Makefile: gate ufs/ on CONFIG_UFS ----------
+# drivers/ufs/Makefile only builds objects under "ifdef CONFIG_UFS". Platforms
+# without UFS (eMMC-only s9863a/sl8541e/ums512) have no CONFIG_UFS in
+# autoconf.mk, so the ufs/ dir produces no built-in.o and linking
+# drivers/built-in.o fails: "cannot find drivers/ufs/built-in.o".
+patch_file("bootloader/u-boot15/drivers/Makefile", [
+    ("obj-y += ufs/", "obj-$(CONFIG_UFS) += ufs/"),
+], "drivers ufs conditional on CONFIG_UFS")
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
