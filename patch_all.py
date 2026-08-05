@@ -518,6 +518,7 @@ extern unsigned int sprd_get_secure_boot_enable(void);
 ''')
 
 ensure_file("bootloader/chipram/secure/efuse/sec_efuse_qogirn6pro.c", r'''#include <security/sec_efuse_qogirn6pro.h>
+#include <security/sprd_crypto_r3p0.h>
 
 /* Stub implementations for ums7520 (SECURE_BOOT=NONE). No real efuse exists
  * on the haps/zebu sim targets; the API only needs to link for sprd_verify. */
@@ -553,6 +554,20 @@ unsigned int sprd_get_secure_boot_enable(void)
 {
 	return 0;
 }
+
+/* qogirn6pro uses the SW_CRYPT (non-CE) path, which compiles the pkcs1
+ * helpers that call sprd_crypto_do(). That function only exists in the CE
+ * drivers (r3p0/r2p0lite) that qogirn6pro never builds, so provide a stub. */
+sprd_crypto_err_t sprd_crypto_do(
+	uint32_t algo,
+	uint8_t *in,   uint32_t in_len,
+	uint8_t *out,  uint32_t *out_len,
+	uint8_t *key1, uint32_t key1_len,
+	uint8_t *key2, uint32_t key2_len,
+	uint8_t *iv,   uint32_t iv_len)
+{
+	return SPRD_CRYPTO_NOSUPPORT;
+}
 ''')
 
 patch_file("bootloader/chipram/include/security/sec_efuse.h", [
@@ -563,6 +578,86 @@ patch_file("bootloader/chipram/secure/efuse/Makefile", [
     ("obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o",
      "obj-$(CONFIG_SOC_ORCA) += sec_efuse_orca.o sec_efuse_orca_drv.o\nobj-$(CONFIG_SOC_QOGIRN6PRO) += sec_efuse_qogirn6pro.o"),
 ], "efuse Makefile add qogirn6pro")
+
+# ---------- 4l. out-of-line instances for inline cp_boot.h getters ----------
+# cp_boot.h defines get_sp_bootcode_size/get_sp_bootcode_buf as plain `inline`
+# under CONFIG_SP_DDR_BOOT. A C99 inline definition emits no symbol, so
+# process_cp_coupling_info.c's extern references fail to link on SP_DDR_BOOT
+# platforms (all ud710/ums512/ums7520). modem_entry.c is the TU that includes
+# cp_boot.h; give it the out-of-line definitions.
+for _me in glob.glob(os.path.join(REPO, "bootloader/u-boot15/board/spreadtrum/*/modem_entry.c")):
+    _rel = os.path.relpath(_me, REPO)
+    with open(_me, "rb") as f:
+        _d = f.read().decode("utf-8", errors="replace")
+    _marker = "/* out-of-line instance of get_sp_bootcode_* (link fix) */"
+    if _marker in _d or '#include "cp_boot.h"' not in _d:
+        print(f"[SKIP] extern instance {_rel}")
+        continue
+    _d += """
+
+/* out-of-line instance of get_sp_bootcode_* (link fix) */
+#ifdef CONFIG_SP_DDR_BOOT
+int get_sp_bootcode_size(void) { return sizeof(sp_loader)/sizeof(u32); }
+void *get_sp_bootcode_buf(void) { return &sp_loader[0]; }
+#endif
+"""
+    with open(_me, "w", newline="") as f:
+        f.write(_d)
+    print(f"[OK] extern instance {_rel}")
+
+# ---------- 4m. dl_operate.c: guard UFS branch with CONFIG_UFS ----------
+# dl_get_flashtype() uses ufs_info unconditionally, but that variable only
+# exists in drivers/ufs/sprd_ufs.c which is gated on CONFIG_UFS -> undefined
+# reference on eMMC-only platforms (ums512/ums7520).
+patch_file("bootloader/u-boot15/common/dloader/dl_operate.c", [
+    ("\tif (gd->boot_device == BOOT_DEVICE_UFS) {\n\t\tmem_size = ufs_info.dev_total_cap*512/1000/1000;\n\t\tsize_inMB = (mem_size+500)/1000*1024;\n\t\tprintf(\"ufs_size:%llu,ufs_size_inMB:%d\\n\", ufs_info.dev_total_cap*512, size_inMB);\n\t}",
+     "\t#ifdef CONFIG_UFS\n\tif (gd->boot_device == BOOT_DEVICE_UFS) {\n\t\tmem_size = ufs_info.dev_total_cap*512/1000/1000;\n\t\tsize_inMB = (mem_size+500)/1000*1024;\n\t\tprintf(\"ufs_size:%llu,ufs_size_inMB:%d\\n\", ufs_info.dev_total_cap*512, size_inMB);\n\t}\n\t#endif"),
+], "dl_operate.c UFS branch gated on CONFIG_UFS")
+
+# ---------- 4n. sprdfb_main.c: drop inline from lcd_id getters ----------
+# load/save_lcd_id_to_kernel are `inline` (no extern instance anywhere) so no
+# symbol is emitted; sprd_fdt_support.c and sprdfb_panel.c reference them and
+# fail to link (e.g. sl8541e). Make them plain functions.
+patch_file("bootloader/u-boot15/drivers/video/sprdfb/sprdfb_main.c", [
+    ("void inline save_lcd_id_to_kernel(uint32_t id)", "void save_lcd_id_to_kernel(uint32_t id)"),
+    ("uint32_t inline load_lcd_id_to_kernel(void)", "uint32_t load_lcd_id_to_kernel(void)"),
+], "sprdfb_main.c drop inline from lcd_id getters")
+
+# ---------- 4o. lcd_rm69380_fpga_mipi.c: hoist CONFIG_FPGA_GPIO_* macros ----------
+# The three CONFIG_FPGA_GPIO_* macros are #defined INSIDE rm69380_power()
+# (line ~178) but used earlier by rm69380_power_off() -> undeclared identifier
+# on CONFIG_LCD_RM69380_FPGA_MIPI platforms (ud710_2h10). Define them at the
+# top so all functions see them (the inner redefinition is harmless).
+lcd_fpga = p("bootloader/u-boot15/drivers/video/sprd/lcd/lcd_rm69380_fpga_mipi.c")
+if os.path.exists(lcd_fpga):
+    with open(lcd_fpga, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    if "CONFIG_FPGA_GPIO_1V2_LDO  73" in d.split("\n")[0:40] or "hoisted CONFIG_FPGA_GPIO" in d:
+        print("[SKIP] lcd_rm69380_fpga_mipi.c GPIO macros already hoisted")
+    else:
+        lines = d.split("\n")
+        depth = 0
+        last_inc0 = -1
+        for i, ln in enumerate(lines):
+            t = ln.lstrip()
+            if t.startswith("#if"):
+                depth += 1
+            elif t.startswith("#endif"):
+                if depth > 0:
+                    depth -= 1
+            if depth == 0 and ln.startswith("#include"):
+                last_inc0 = i
+        if last_inc0 >= 0:
+            lines.insert(last_inc0 + 1,
+                         "\n/* hoisted CONFIG_FPGA_GPIO_* (were defined inside rm69380_power) */\n"
+                         "#define CONFIG_FPGA_GPIO_1V8_LDO  72\n"
+                         "#define CONFIG_FPGA_GPIO_1V2_LDO  73\n"
+                         "#define CONFIG_FPGA_GPIO_RST_LDO  137\n")
+            with open(lcd_fpga, "w", newline="") as f:
+                f.write("\n".join(lines))
+            print("[OK] lcd_rm69380_fpga_mipi.c GPIO macros hoisted")
+        else:
+            print("[WARN] lcd_rm69380_fpga_mipi.c no depth-0 #include found")
 
 # ---------- 4h. exfat.h union missing semicolon ----------
 # include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
@@ -613,6 +708,12 @@ old_fn = """int dl_cmd_disable_hdlc(dl_packet_t *packet, void *arg)
 new_fn = old_fn + """
 #define BSL_CMD_UNLOCK_BL 0x500
 #define BSL_CMD_DISABLE_AVB 0x502
+#ifndef CONFIG_SECBOOT
+/* Stub for SECURE_BOOT=NONE platforms: set_lock_status() is only defined in
+ * sec_common.c under CONFIG_SECBOOT, but dl_cmd_unlock_bl/dl_cmd_disable_avb
+ * (and fastboot.c) reference it unconditionally. */
+int set_lock_status(unsigned int flag) { return 0; }
+#endif
 int dl_cmd_unlock_bl(dl_packet_t *packet, void *arg)
 {
 \tset_lock_status(1); // VBOOT_STATUS_UNLOCK
