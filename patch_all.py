@@ -183,6 +183,62 @@ for phy in ["r1p1", "r1p1_orca"]:
         "void ddrc_phy_io_set(uint32 phy_base, uint32 freq_sel);",
     ])
 
+# ---------- 4e. Auto-add prototypes for implicit-declaration conflicts ----------
+# Full sources have many old-style C files where a function is called before its
+# definition with no prototype -> clang "conflicting types". Scan known problem
+# directories and insert a prototype after the last #include for every function
+# that is called before its own definition. Conservative single-line matcher.
+def auto_fix_implicit_protos(dirs):
+    import re as _re
+    keyw = {'if', 'for', 'while', 'switch', 'return', 'sizeof', 'do', 'else',
+            'case', 'goto', 'typedef', 'struct', 'union', 'enum'}
+    def_re = _re.compile(
+        r'^(?P<prefix>(?:static\s+|inline\s+|__inline\s+|const\s+|volatile\s+)*)'
+        r'(?P<ret>\w[\w\s\*]*?)\s*(?P<name>[A-Za-z_]\w*)\s*\((?P<args>[^;{}]*)\)\s*\{?\s*$')
+    fixed_files = 0
+    for d in dirs:
+        for fp in glob.glob(os.path.join(REPO, d, "**", "*.c"), recursive=True):
+            with open(fp, "rb") as f:
+                content = f.read().decode("utf-8", errors="replace")
+            lines = content.split("\n")
+            defs = []
+            for i, ln in enumerate(lines):
+                m = def_re.match(ln)
+                if not m:
+                    continue
+                if m.group('name') in keyw or m.group('ret').strip() in keyw:
+                    continue
+                defs.append((m.group('name'), i, ln))
+            protos = []
+            for name, def_idx, sig in defs:
+                called_before = False
+                for j in range(def_idx):
+                    if _re.search(r'\b' + _re.escape(name) + r'\s*\(', lines[j]):
+                        called_before = True
+                        break
+                if called_before:
+                    proto = sig.rstrip().rstrip('{').rstrip() + ";"
+                    if proto not in lines and not any(p == proto for p in protos):
+                        protos.append(proto)
+            if protos:
+                last_inc = -1
+                for i, ln in enumerate(lines):
+                    if ln.startswith("#include"):
+                        last_inc = i
+                if last_inc >= 0:
+                    insert = ["", "/* auto-added prototypes (implicit declaration fix) */"] + protos + [""]
+                    lines[last_inc + 1:last_inc + 1] = insert
+                    with open(fp, "w", newline="") as f:
+                        f.write("\n".join(lines))
+                    fixed_files += 1
+                    print(f"[OK] auto-proto {os.path.relpath(fp, REPO)}: {len(protos)} protos")
+    print(f"auto-proto: {fixed_files} files fixed")
+
+auto_fix_implicit_protos([
+    "bootloader/chipram/ddr",
+    "bootloader/chipram/nand_spl/ufs",
+])
+
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
     ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
