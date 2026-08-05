@@ -234,7 +234,7 @@
 #define LDO_MEM	1100
 #endif
 #ifdef DDR_AUTO_DETECT
-#define DDR_FREQ_AUTO_SEL /* MIN_SIZE_OPT: freq auto-compat */
+//#define DDR_FREQ_AUTO_SEL
 #define DDR_REG_VAL_MR5_INDEX0 0x1
 #define DDR_REG_VAL_MR6_INDEX0 0x6
 #define DDR_REG_VAL_MR7_INDEX0 0x0

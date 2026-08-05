@@ -205,19 +205,14 @@ endif # !LOGO_BMP
 # Define __KERNEL_STRICT_NAMES to prevent typedef overlaps
 # Define _GNU_SOURCE to obtain the getline prototype from stdio.h
 #
-HOST_EXTRACFLAGS += -include stdbool.h \
-		-include $(srctree)/include/libfdt_env.h \
+HOST_EXTRACFLAGS += -include $(srctree)/include/libfdt_env.h \
 		$(patsubst -I%,-idirafter%, $(filter -I%, $(UBOOTINCLUDE))) \
 		-I$(srctree)/lib/libfdt \
 		-I$(srctree)/tools \
 		-DCONFIG_SYS_TEXT_BASE=$(CONFIG_SYS_TEXT_BASE) \
 		-DUSE_HOSTCC \
 		-D__KERNEL_STRICT_NAMES \
-		-D_GNU_SOURCE \
-		-std=gnu11 \
-		-Wno-error=int-conversion -Wno-error=implicit-function-declaration \
-		-Wno-error=incompatible-pointer-types -Wno-error=discarded-qualifiers \
-		-Wno-error=deprecated-declarations -Wno-error=use-after-free
+		-D_GNU_SOURCE
 
 __build:	$(LOGO-y)
 

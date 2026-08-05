@@ -24,5 +24,5 @@ obj-y += input/
 # SOC specific infrastructure drivers.
 obj-y += soc/
 obj-y += thermal/
-obj-$(CONFIG_UFS) += ufs/
+obj-y += ufs/
 obj-y += hwtracing/coresight/

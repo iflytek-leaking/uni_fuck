@@ -203,7 +203,6 @@
 //--- for DDR
 #define CFG_DRAM_TYPE	DRAM_LPDDR3
 #define DDR_AUTO_DETECT
-#define DDR_FREQ_AUTO_SEL /* MIN_SIZE_OPT: freq auto-compat */
 
 //#define DDR_DFS_SUPPORT
 //#define DDR_DFS_VAL_BASE 0X1c00

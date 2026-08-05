@@ -292,8 +292,9 @@ static void do_config_file(const char *filename)
 
 	fd = open(filename, O_RDONLY);
 	if (fd < 0) {
-		/* Missing config files are normal (wildcard deps); do not abort. */
-		return;
+		fprintf(stderr, "fixdep: error opening config file: ");
+		perror(filename);
+		exit(2);
 	}
 	if (fstat(fd, &st) < 0) {
 		fprintf(stderr, "fixdep: error fstat'ing config file: ");
@@ -335,17 +336,12 @@ static void parse_dep_file(void *map, size_t len)
 
 	while (m < end) {
 		/* Skip any "white space" */
-		while (m < end && (*m == ' ' || *m == '\\' || *m == '\n' || *m == '\r'))
+		while (m < end && (*m == ' ' || *m == '\\' || *m == '\n'))
 			m++;
 		/* Find next "white space" */
 		p = m;
-		while (p < end && *p != ' ' && *p != '\\' && *p != '\n' && *p != '\r')
+		while (p < end && *p != ' ' && *p != '\\' && *p != '\n')
 			p++;
-		/* Skip empty tokens (e.g. trailing separators at EOF) */
-		if (p == m) {
-			m = p + 1;
-			continue;
-		}
 		/* Is the token we found a target name? */
 		is_target = (*(p-1) == ':');
 		/* Don't write any target names into the dependency file */

@@ -23,7 +23,7 @@ static __inline void usb_handler (void);
 /**---------------------------------------------------------------------------*
  **                         Compiler Flag                                     *
  **---------------------------------------------------------------------------*/
-#define MAX_RECV_LENGTH     (256*64)// Optimized 16KB
+#define MAX_RECV_LENGTH     (64*64)//640*64 0xa000
 #define USB_TIMEOUT             (1000)
 
 /**---------------------------------------------------------------------------*
@@ -309,7 +309,7 @@ LOCAL void usb_reset_handler (void)
             break;
     }
     * (volatile uint32 *) USB_GINTMSK |= BIT_12;
-#if 0 // Optimized skip cache
+#ifndef CONFIG_SCX35L64
     Dcache_InvalRegion((unsigned int)s_setup_packet, sizeof(s_setup_packet));
 #endif
     EPO0_config (TRUE, s_setup_packet);
@@ -352,7 +352,7 @@ LOCAL void usb_EP6_handle (void)
     {
         doepint_ptr->mBits.transfer_com = 1;
         recv_length = MAX_RECV_LENGTH - doeptsiz_ptr->mBits.transfer_size;
-#if 0 // Optimized skip cache
+#ifndef CONFIG_SCX35L64
         Dcache_InvalRegion((unsigned int)(&usb_out_endpoint_buf[currentDmaBufferIndex][0]),  MAX_RECV_LENGTH);
 #endif
         * (volatile uint32 *) USB_DOEPMSK |= (unsigned int) BIT_13;
@@ -401,7 +401,7 @@ LOCAL void usb_EP0_out_handle (void)
     }
 
     doepint_ptr->dwValue = 0xffffffff;// clear all interrupt
-#if 0 // Optimized skip cache
+#ifndef CONFIG_SCX35L64
     Dcache_InvalRegion((unsigned int)s_setup_packet, sizeof(s_setup_packet));
 #endif
     EPO0_config (TRUE, s_setup_packet); //renable ep0 nd set packet count
@@ -653,33 +653,3 @@ void usb_init(unsigned long usb_reg_base)
 	usb_core_init();
 }
 
-
-
-/* Optimized raw path for high-speed bulk transfer - zero HDLC overhead */
-int usb_get_raw_packet(unsigned char* buf, unsigned int len)
-{
-    unsigned int total = 0;
-    unsigned char *dest = buf;
-    while (total < len) {
-        if (readIndex == recv_length) {
-            readIndex = 0;
-            recv_length = 0;
-            usb_handler();
-            if (recv_length > 0) {
-                nIndex = currentDmaBufferIndex;
-                currentDmaBufferIndex ^= 0x1;
-            } else
-                continue;
-        }
-        unsigned int avail = recv_length - readIndex;
-        unsigned int need = len - total;
-        unsigned int copy = (avail < need) ? avail : need;
-        unsigned char *src = usb_out_endpoint_buf[nIndex] + readIndex;
-        unsigned int i;
-        for (i = 0; i < copy; i++)
-            dest[total + i] = src[i];
-        readIndex += copy;
-        total += copy;
-    }
-    return total;
-}

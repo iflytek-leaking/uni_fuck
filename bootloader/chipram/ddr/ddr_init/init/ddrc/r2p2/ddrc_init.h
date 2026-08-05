@@ -248,11 +248,6 @@ typedef enum DRAM_CS_TYPE
 	DRAM_CS_ALL
 }DRAM_CS_TYPE_E;
 
-/* prototypes: clang rejects implicit int decl followed by void def (conflicting types) */
-void dmc_mrw(DRAM_MR_TYPE_E mr_num, DRAM_CS_TYPE_E cs_num, u32 mr_data);
-int dmc_mrr(DRAM_MR_TYPE_E mr_num, DRAM_CS_TYPE_E cs_num, u32 *mr_data);
-void dmc_mpc(u32 data, DRAM_CS_TYPE_E cs_num);
-
 typedef enum DRAM_CHN_TYPE
 {
 	DRAM_CHN_0=0,

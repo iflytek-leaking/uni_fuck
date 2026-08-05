@@ -18,8 +18,6 @@
 
 DECLARE_GLOBAL_DATA_PTR;
 
-void vboot_verify_vbmeta(char *partition_name);
-
 #define EFUSE_HASH_STARTID 2
 
 #ifdef TOS_TRUSTY
@@ -42,7 +40,7 @@ unsigned char g_vboot_sys_cmdline[SPRD_VBOOT_SYSTEM_CMDLINE_MAXSIZE];
 extern AvbSlotVerifyData* avb_slot_data[2];
 
 static uchar *const s_force_secure_check[] = {
-	/* "splloader", MIN_SIZE_OPT: allow free read/write spl */
+    "splloader",
 	"sml",
 	"trustos",
 	"teecfg",

@@ -132,7 +132,7 @@ uint32_t sprd_pkcs1_pss_decode(const uint8_t *msghash, uint32_t msghashlen,
 	sprd_pal_memcpy(mask+8, msghash, msghashlen);
 	sprd_pal_memcpy(mask+8+msghashlen, DB+x, saltlen);
 
-#if defined(CONFIG_SOC_ORCA) || defined(CONFIG_SOC_QOGIRN6PRO)
+#ifdef CONFIG_SOC_ORCA
 	sha256_csum_wd((unsigned char*)mask, 8+msghashlen+saltlen, mask, 0);
 #else
 	if ((err = sprd_crypto_do(hash_type, mask, 8+msghashlen+saltlen,

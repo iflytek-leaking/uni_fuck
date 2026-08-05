@@ -89,5 +89,4 @@ SECTIONS
 	/DISCARD/ : { *(.plt*) }
 	/DISCARD/ : { *(.interp*) }
 	/DISCARD/ : { *(.gnu*) }
-	/DISCARD/ : { *(.hash) }
 }

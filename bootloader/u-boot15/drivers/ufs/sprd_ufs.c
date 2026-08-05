@@ -13,8 +13,6 @@ struct   ufs_driver_info ufs_info;
 
 uint32_t fatal_err = 0;
 
-void reset_and_restore_hc(void);
-
 struct backstage_recovery bs_recv;
 
 struct lu_specific_cfg_tbl factory_lu_tbl[UFS_PLATFORM_LU_NUM] = {

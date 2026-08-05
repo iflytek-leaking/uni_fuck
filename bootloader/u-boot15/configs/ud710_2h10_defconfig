@@ -13,6 +13,3 @@ CONFIG_OF_LIBFDT_OVERLAY=y
 # CONFIG_CMD_RUN is not set
 # CONFIG_CMD_SAVEENV is not set
 # CONFIG_CMD_SOURCE is not set
-
-# CONFIG_VIDEO is not set
-# CONFIG_POWER_BATTERY is not set

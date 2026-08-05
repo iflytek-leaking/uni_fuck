@@ -68,8 +68,6 @@ int dl_cmd_get_uid_x86(dl_packet_t *packet, void *arg);
 int dl_cmd_end_process(dl_packet_t *packet, void *arg);
 int dl_cmd_read_ref_info(dl_packet_t *packet, void *arg);
 int dl_cmd_disable_hdlc(dl_packet_t *packet, void *arg);
-int dl_cmd_unlock_bl(dl_packet_t *packet, void *arg);
-int dl_cmd_disable_avb(dl_packet_t *packet, void *arg);
 int dl_cmd_write_datetime(dl_packet_t *packet, void *arg);
 int dl_cmd_set_debuginfo(dl_packet_t *packet, void *arg);
 #ifdef CONFIG_EMMC_DDR_CHECK_TYPE

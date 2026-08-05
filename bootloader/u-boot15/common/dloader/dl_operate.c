@@ -20,13 +20,6 @@
 DECLARE_GLOBAL_DATA_PTR;
 static DL_EMMC_FILE_STATUS g_status;
 static DL_EMMC_STATUS g_dl_eMMCStatus;
-#define READ_CACHE_SIZE (256*1024)
-#define READ_CACHE_INVALID ((uint64_t)-1)
-static unsigned char read_cache_buffer[READ_CACHE_SIZE] __attribute__((aligned(64)));
-static uint64_t read_cache_start = READ_CACHE_INVALID;
-static uint64_t read_cache_end = 0;
-static char read_cache_partition[64] = {0};
-static int read_cache_valid = 0;
 
 static unsigned long g_checksum;
 static unsigned long g_sram_addr;
@@ -190,15 +183,11 @@ uint8_t emmc_2ndhand_detect()
 	}
 #endif
 
-#ifdef CONFIG_SPRD_RPMB
 	rpmb_key_result = is_wr_rpmb_key();
 	if (rpmb_key_result != 0) {
 		printf("The Emmc rpmb partition was used\n");
 		result |= RPMB_KEY_EXIST;
 	}
-#else
-	(void)rpmb_key_result;
-#endif
 
 	return result;
 }
@@ -1026,7 +1015,6 @@ OPERATE_STATUS dl_read_start(uchar * partition_name, uint64_t size)
 	struct ext2_sblock *sblock = NULL;
 
 	strcpy(g_dl_eMMCStatus.curUserPartitionName, partition_name);
-	read_cache_start = READ_CACHE_INVALID; read_cache_end = 0; read_cache_valid = 0; memset(read_cache_partition, 0, sizeof(read_cache_partition));
 	/*get special partition attr */
 	_get_partition_attribute(partition_name);
 
@@ -1067,35 +1055,14 @@ OPERATE_STATUS dl_read_midst(uint32_t size, uint64_t off, uchar * buf)
 {
 	if (PARTITION_PURPOSE_NV == g_dl_eMMCStatus.partitionpurpose) {
 		memcpy(buf, (uchar *) (g_eMMCBuf + off), size);
-		return OPERATE_SUCCESS;
-	}
-	if (read_cache_valid && (0 == strcmp(read_cache_partition, g_dl_eMMCStatus.curUserPartitionName))) {
-		if (off >= read_cache_start && (off + size) <= read_cache_end) {
-			memcpy(buf, read_cache_buffer + (off - read_cache_start), size);
-			return OPERATE_SUCCESS;
-		}
-	}
-	{
-		uint64_t aligned_off = (off / READ_CACHE_SIZE) * READ_CACHE_SIZE;
-		uint64_t cache_sz = READ_CACHE_SIZE;
-		if (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, cache_sz, aligned_off, (char*)read_cache_buffer)) {
-			if (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, (uint64_t)size, (uint64_t)off, buf)) {
-				errorf("read error!\n");
-				return OPERATE_SYSTEM_ERROR;
-			}
-			return OPERATE_SUCCESS;
-		}
-		read_cache_start = aligned_off; read_cache_end = aligned_off + cache_sz; read_cache_valid = 1; strcpy(read_cache_partition, g_dl_eMMCStatus.curUserPartitionName);
-		if (off >= read_cache_start && (off + size) <= read_cache_end) {
-			memcpy(buf, read_cache_buffer + (off - read_cache_start), size);
-			return OPERATE_SUCCESS;
-		}
+	} else {
 		if (0 != common_raw_read(g_dl_eMMCStatus.curUserPartitionName, (uint64_t)size, (uint64_t)off, buf)) {
 			errorf("read error!\n");
 			return OPERATE_SYSTEM_ERROR;
 		}
-		return OPERATE_SUCCESS;
 	}
+
+	return OPERATE_SUCCESS;
 }
 
 OPERATE_STATUS dl_read_end(void)
@@ -1333,13 +1300,11 @@ OPERATE_STATUS dl_get_flashtype(uchar * content, uint16_t * size)
 		size_inMB = (mem_size+500)/1000*1024;
 		printf("emmc_size:%llu,emmc_size_inMB:%d\n", emmc_get_capacity(PARTITION_USER), size_inMB);
 	}
-#ifdef CONFIG_UFS
 	if (gd->boot_device == BOOT_DEVICE_UFS) {
 		mem_size = ufs_info.dev_total_cap*512/1000/1000;
 		size_inMB = (mem_size+500)/1000*1024;
 		printf("ufs_size:%llu,ufs_size_inMB:%d\n", ufs_info.dev_total_cap*512, size_inMB);
 	}
-#endif
 	/* did field is used for emmc size */
 	flash_type.did = get_correct_size(size_inMB);
 	*size = sizeof(struct FLASH_TYPE);

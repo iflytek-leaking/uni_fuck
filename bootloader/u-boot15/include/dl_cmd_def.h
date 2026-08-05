@@ -124,9 +124,6 @@ typedef enum dl_cmd_type {
     BSL_PKT_TYPE_MAX
 }dl_cmd_type_t ;
 
-#define BSL_CMD_UNLOCK_BL 0x500
-#define BSL_CMD_DISABLE_AVB 0x502
-
 struct dl_cmd {
 	struct dl_cmd *next;
 	enum dl_cmd_type type;

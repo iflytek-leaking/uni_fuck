@@ -267,5 +267,3 @@ cmd_link_o_target = $(if $(strip $1),\
 		      rm -f $@; $(AR) rcs $@ )
 
 #########################################################################
-
-KBUILD_CFLAGS += $(call cc-option,-Wno-error=implicit-function-declaration) $(call cc-option,-Wno-error=implicit-fallthrough) -std=gnu11

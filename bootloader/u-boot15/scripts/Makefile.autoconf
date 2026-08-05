@@ -188,16 +188,14 @@ ifneq ($(KBUILD_SRC),)
 	else									\
 		dest=arch/$(ARCH)/include/asm/arch-$(if $(SOC),$(SOC),$(CPU));	\
 	fi;									\
-	rm -rf include/asm/arch;						\
-	cp -r $(KBUILD_SRC)/$$dest include/asm/arch
+	ln -fsn $(KBUILD_SRC)/$$dest include/asm/arch
 else
 	$(Q)if [ -d arch/$(ARCH)/mach-$(SOC)/include/mach ]; then	\
 		dest=../../mach-$(SOC)/include/mach;			\
 	else								\
 		dest=arch-$(if $(SOC),$(SOC),$(CPU));			\
 	fi;								\
-	rm -rf arch/$(ARCH)/include/asm/arch;				\
-	cp -r $$dest arch/$(ARCH)/include/asm/arch
+	ln -fsn $$dest arch/$(ARCH)/include/asm/arch
 endif
 
 PHONY += FORCE

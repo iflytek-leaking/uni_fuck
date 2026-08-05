@@ -26,11 +26,6 @@ static u8 training_retry = 0;
 static u8 gate_fail = 0;
 static u32 trfc_dtmg2[8] = {0x353019,0x4D4825,0x857e40,0x999149,0xCCC262,0x109FD7F,0x132FF92,0x173FFB2};
 
-/* forward declarations (old-style code calls before definition) */
-void ddrc_phy_io_get(uint32 phy_base, uint32 freq_sel);
-void ddrc_phy_io_set(uint32 phy_base, uint32 freq_sel);
-void while_loop(void);
-
 #ifdef DDR_SCAN_ENABLE
 uint32 scan_freq;
 #endif

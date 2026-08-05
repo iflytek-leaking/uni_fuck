@@ -415,7 +415,7 @@ PHONY += outputmakefile
 # output directory.
 outputmakefile:
 ifneq ($(KBUILD_SRC),)
-	@if [ ! -e source ]; then ln -fsn $(srctree) source 2>/dev/null || cp -r $(srctree) source; fi
+	$(Q)ln -fsn $(srctree) source
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/mkmakefile \
 	    $(srctree) $(objtree) $(VERSION) $(PATCHLEVEL)
 endif
@@ -874,7 +874,6 @@ u-boot.hex u-boot.srec: u-boot FORCE
 	$(call if_changed,objcopy)
 
 OBJCOPYFLAGS_u-boot.bin := -O binary \
-		--gap-fill=0xff \
 		$(if $(CONFIG_X86_RESET_VECTOR),-R .start16 -R .resetvec)
 
 binary_size_check: u-boot.bin FORCE
@@ -1603,5 +1602,3 @@ FORCE:
 # Declare the contents of the .PHONY variable as phony.  We keep that
 # information in a variable so we can use it in if_changed and friends.
 .PHONY: $(PHONY)
-
-KBUILD_CFLAGS += $(call cc-option,-Wno-error=implicit-function-declaration) -std=gnu11

@@ -99,9 +99,7 @@ void sprd_update_swVersion(void)
 		}
 		//if(check_rollback_version(secure_update_version))
 		if(secure_update_version>Trusted_rollback_version)
-#ifdef CONFIG_SECURE_EFUSE
 			sprd_set_version(SW_VERSION_COUNTER1,secure_update_version);
-#endif
 		Trusted_update_index = 0;
 		Trusted_rollback_version = 0;
 	}
@@ -112,11 +110,7 @@ bool sprd_anti_rollback(uint32_t certtype, uint32_t certversion)
 	secf("image type = %d\n", certtype);
 	if (certtype == TRUSTED_FIRMWARE) {
 		if (Trusted_rollback_version == SEC_VERSION_INIT_VALUE){
-#ifdef CONFIG_SECURE_EFUSE
 			sprd_get_version(SW_VERSION_COUNTER1 ,&Trusted_rollback_version);
-#else
-			Trusted_rollback_version = 0;
-#endif
 			secf("read efuse version: 0X%x\n", Trusted_rollback_version);
 		}
 		secf("Trusted_rollback_version = 0X%x  certversion = 0X%x\n",
@@ -130,11 +124,7 @@ bool sprd_anti_rollback(uint32_t certtype, uint32_t certversion)
 		}
 	} else if (certtype == NON_TRUSTED_FIRMWARE) {
 		if (Non_Trusted_rollback_version == VERSION_INIT_VALUE) {
-#ifdef CONFIG_SECURE_EFUSE
 			sprd_get_version(SW_VERSION_COUNTER2,&Non_Trusted_rollback_version);
-#else
-			Non_Trusted_rollback_version = 0;
-#endif
 			secf("read efuse version: %d\n", Non_Trusted_rollback_version);
 		}
 		secf("Non_Trusted_rollback_version = %d  certversion = %d\n",

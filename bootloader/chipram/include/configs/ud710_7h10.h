@@ -186,11 +186,11 @@
 #endif
 //--- for DDR
 //#define FDL1_DDR_SCAN
-#define DDR_FREQ_AUTO_SEL /* MIN_SIZE_OPT: freq auto-compat */
+//#define DDR_FREQ_AUTO_SEL
 #define CFG_DRAM_TYPE	DRAM_LPDDR4X
 #define CFG_PINMUX_CASE LP4_PINMUX_CASE0
 #define DDR_AUTO_DETECT
-#define ADC_DETECT_DRAM_TYPE /* MIN_SIZE_OPT: CASE auto-switch (CASE0/CASE1) */
+//#define ADC_DETECT_DRAM_TYPE
 #define DDR_MODE	0xF0000
 
 //#define DDR_DFS_TEST

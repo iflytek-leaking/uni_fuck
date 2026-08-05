@@ -111,27 +111,26 @@
 /* Chip Driver Macro Definitions End*/
 
 /* Command line configuration */
-/* MIN_SIZE_OPT: drop non-download commands */
-//#define CONFIG_MENU
+#define CONFIG_MENU
 /*#define CONFIG_MENU_SHOW*/
-//#define CONFIG_CMD_CACHE
-//#define CONFIG_CMD_BDI
-//#define CONFIG_CMD_DHCP
-//#define CONFIG_CMD_PXE
-//#define CONFIG_CMD_ENV
-//#define CONFIG_CMD_FLASH
-//#define CONFIG_CMD_IMI
-//#define CONFIG_CMD_MEMORY
-//#define CONFIG_CMD_MII
+#define CONFIG_CMD_CACHE
+#define CONFIG_CMD_BDI
+#define CONFIG_CMD_DHCP
+#define CONFIG_CMD_PXE
+#define CONFIG_CMD_ENV
+#define CONFIG_CMD_FLASH
+#define CONFIG_CMD_IMI
+#define CONFIG_CMD_MEMORY
+#define CONFIG_CMD_MII
 //#define CONFIG_CMD_NET
-//#define CONFIG_CMD_PING
-//#define CONFIG_CMD_SAVEENV
-//#define CONFIG_CMD_RUN
+#define CONFIG_CMD_PING
+#define CONFIG_CMD_SAVEENV
+#define CONFIG_CMD_RUN
 //#define CONFIG_CMD_BOOTD
-//#define CONFIG_CMD_ECHO
-//#define CONFIG_CMD_SOURCE
-//#define CONFIG_CMD_FAT
-//#define CONFIG_DOS_PARTITION
+#define CONFIG_CMD_ECHO
+#define CONFIG_CMD_SOURCE
+#define CONFIG_CMD_FAT
+#define CONFIG_DOS_PARTITION
 
 /* Miscellaneous configurable options */
 #define CONFIG_SYS_LOAD_ADDR		(PHYS_SDRAM_1 + 0x10000000)
@@ -223,10 +222,8 @@
 #define CONFIG_UFS
 
 /*file system config*/
-/* MIN_SIZE_OPT: keep FAT lib (sd_operate/sprdisk link-required), drop FAT cmd & write & ext4 */
-#define CONFIG_FS_FAT
-//#define CONFIG_FAT_WRITE
-//#define CONFIG_FS_EXT4
+#define CONFIG_FAT_WRITE
+#define CONFIG_FS_EXT4
 
 /*used in usb drv*/
 #define CHIP_ENDIAN_LITTLE
@@ -254,16 +251,15 @@
 #define CONFIG_EFI_PARTITION
 
 /*for sysdump*/
-/* MIN_SIZE_OPT: drop sysdump/ramdump */
-//#define CONFIG_SPRD_SYSDUMP
-//#define SPRD_SYSDUMP_MAGIC	RAMDISK_ADR
-//#define CONFIG_RAMDUMP_NO_SPLIT /* Don't split sysdump file */
-//#define REAL_SDRAM_SIZE 0x40000000  /*dump 1G*/
-//#define CONFIG_SHA1
-//#define CONFIG_SHA1
-//#define CONFIG_SPRD_MINI_SYSDUMP
-//#define CONFIG_GZIP_COMPRESSED
-//#define CONFIG_GZIP_COMPRESS_DEF_SZ     0x200
+#define CONFIG_SPRD_SYSDUMP
+#define SPRD_SYSDUMP_MAGIC	RAMDISK_ADR
+#define CONFIG_RAMDUMP_NO_SPLIT /* Don't split sysdump file */
+#define REAL_SDRAM_SIZE 0x40000000  /*dump 1G*/
+#define CONFIG_SHA1
+#define CONFIG_SHA1
+#define CONFIG_SPRD_MINI_SYSDUMP
+#define CONFIG_GZIP_COMPRESSED
+#define CONFIG_GZIP_COMPRESS_DEF_SZ     0x200
 
 #define PWR_KEY_DETECT_CNT  2
 #define ALARM_LEAD_SET_MS 0 /* time set for alarm boot in advancd */
@@ -365,8 +361,7 @@
 #define CONFIG_SYS_CACHELINE_SIZE	64
 
 /* coresight dump ETB data */
-/* MIN_SIZE_OPT: drop etb dump */
-//#define CONFIG_ETB_DUMP
+#define CONFIG_ETB_DUMP
 
 #ifdef CONFIG_ADIE_SC2730
 #define ADI_15BIT_MODE

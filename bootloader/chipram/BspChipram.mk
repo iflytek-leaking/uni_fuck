@@ -1,4 +1,4 @@
-BSP_OBJ ?= 16
+BSP_OBJ :=`cat /proc/cpuinfo | grep processor | wc -l`
 
 ifneq ($(strip $(BSP_CHIPRAM_TOOLCHAIN)),)
 LOCAL_TOOLCHAIN := $(BSP_CHIPRAM_TOOLCHAIN)

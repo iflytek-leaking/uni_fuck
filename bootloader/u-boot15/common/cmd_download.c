@@ -200,8 +200,6 @@ int do_download(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	dl_cmd_register(BSL_CMD_END_PROCESS, dl_cmd_end_process);
 	dl_cmd_register(BSL_CMD_READ_REFINFO, dl_cmd_read_ref_info);
 	dl_cmd_register(BSL_CMD_DIS_HDLC, dl_cmd_disable_hdlc);
-	dl_cmd_register(BSL_CMD_UNLOCK_BL, dl_cmd_unlock_bl);
-	dl_cmd_register(BSL_CMD_DISABLE_AVB, dl_cmd_disable_avb);
 	dl_cmd_register(BSL_CMD_WRITE_DATETIME, dl_cmd_write_datetime);
 	dl_cmd_register(BSL_CMD_SET_DEBUGINFO, dl_cmd_set_debuginfo);
 #ifdef CONFIG_PCTOOL_CHECK_MULTI_FIXNV

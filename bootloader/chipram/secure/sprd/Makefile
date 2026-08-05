@@ -38,11 +38,6 @@ obj-$(CONFIG_SW_CRYPT)	+= sprd_pkcs1_mgf1.o sprd_pkcs1_pss.o sprd_pkcs1_v1_5.o
 else
 obj-$(CONFIG_SW_CRYPT)	+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o
 endif
-#QOGIRN6PRO (FPGA/ZEBU simulation) has no CE engine: use software crypto stack
-ifneq ($(CONFIG_SOC_QOGIRN6PRO),)
-CFLAGS += -DCONFIG_SOC_QOGIRN6PRO
-obj-$(CONFIG_SW_CRYPT)	+= sprd_crypto_sw.o sprd_pkcs1_mgf1.o sprd_pkcs1_pss.o sprd_pkcs1_v1_5.o
-endif
 obj-y += sprd_verify.o
 
 obj-$(CONFIG_SECURE_EFUSE) += sec_efuse_api.o

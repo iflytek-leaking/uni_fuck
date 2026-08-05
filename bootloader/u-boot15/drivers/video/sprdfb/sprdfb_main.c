@@ -52,17 +52,15 @@ uint32_t lcd_get_bpix(void)
 	return panel_info.vl_bpix;
 }
 
-void save_lcd_id_to_kernel(uint32_t id)
+void inline save_lcd_id_to_kernel(uint32_t id)
 {
 	lcd_id_to_kernel = id;
 }
 
-#ifndef CONFIG_VIDEO_SPRD
-uint32_t load_lcd_id_to_kernel(void)
+uint32_t inline load_lcd_id_to_kernel(void)
 {
 	return lcd_id_to_kernel;
 }
-#endif
 
 void save_lcd_size_to_kernel(uint32_t width, uint32_t hight)
 {

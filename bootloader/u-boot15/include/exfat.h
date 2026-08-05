@@ -224,7 +224,7 @@ typedef struct exfat_file_entry {
 			__u8    reserved1[8];
 		}a;
 		exfat_strext_entry  *str_dent;
-	};
+	}
 }exfat_file_entry;
 
 typedef struct exfat_fnext_entry {

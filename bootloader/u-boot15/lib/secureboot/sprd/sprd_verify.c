@@ -111,7 +111,7 @@ void update_sec_version(void)
         {
             if (nosecure_update_version != Non_Trusted_update_version[i])
             {
-                secf("\r\nsec rollback version not unified\n");
+                secf("\r\Nosec rollback version not unified\n");
                 return;
             }
         }

@@ -126,9 +126,6 @@ extern char *cpu_serial_hash(void);
 extern char *get_product_sn();
 #endif
 
-void fb_cmd_getlcs(const char *arg, void *data, uint64_t sz);
-void fb_cmd_getsocid(const char *arg, void *data, uint64_t sz);
-
 # ifndef CONFIG_DTS_MEM_LAYOUT
 #ifdef CONFIG_X86
 #ifdef CONFIG_SPRD_SOC_SP9853I

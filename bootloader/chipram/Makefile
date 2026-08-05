@@ -57,7 +57,7 @@ export PLATFORM_LIBS
 
 #########################################################################
 #ALL +=  spl fdl1
-ALL +=  fdl1
+ALL +=  spl fdl1 ddr_scan
 
 all:		$(ALL) $(obj)include/autoconf.mk
 

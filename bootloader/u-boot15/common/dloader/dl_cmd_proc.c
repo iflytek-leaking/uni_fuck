@@ -1,7 +1,5 @@
 
 #include <common.h>
-#include <loader_common.h>
-#include <sprd_common_rw.h>
 #include "dl_cmd_proc.h"
 
 #ifdef CONFIG_NAND_BOOT
@@ -19,7 +17,7 @@
 #include "root_inspect.h"
 
 #ifdef CONFIG_PCTOOL_CHECK_WRITE_PROTECT
-static int enable_write_flash = 1; /* MIN_SIZE_OPT: allow free write spl/flash */
+static int enable_write_flash = 0;
 #endif
 
 static root_stat_t root_stat;
@@ -545,25 +543,6 @@ int dl_cmd_disable_hdlc(dl_packet_t *packet, void *arg)
 {
 	dl_send_ack(BSL_REP_ACK);
 	FDL_DisableHDLC(1);
-	return 0;
-}
-#define BSL_CMD_UNLOCK_BL 0x500
-#define BSL_CMD_DISABLE_AVB 0x502
-int dl_cmd_unlock_bl(dl_packet_t *packet, void *arg)
-{
-#ifdef CONFIG_SECBOOT
-	set_lock_status(1); // VBOOT_STATUS_UNLOCK
-#endif
-	_send_reply(0);
-	return 0;
-}
-int dl_cmd_disable_avb(dl_packet_t *packet, void *arg)
-{
-#ifdef CONFIG_SECBOOT
-	set_lock_status(1);
-#endif
-	common_raw_erase("vbmeta", 0, 0);
-	_send_reply(0);
 	return 0;
 }
 

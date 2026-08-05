@@ -28,8 +28,6 @@
 #include <libfdt.h>
 #include <fdt.h>
 #include <linux/ctype.h>
-
-void get_current_time(void);
 #include <fdtdec.h>
 #include <u-boot/sha1.h>
 

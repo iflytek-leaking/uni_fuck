@@ -74,7 +74,7 @@ uint32_t sprd_pkcs1_mgf1(sprd_crypto_algo_t hash_type,
 		MGF1_STORE32H(counter, tmp+seedlen);
 		++counter;
 
-#if defined(CONFIG_SOC_ORCA) || defined(CONFIG_SOC_QOGIRN6PRO)
+#ifdef CONFIG_SOC_ORCA
 		sha256_csum_wd((unsigned char*)tmp, seedlen+4, buf, 0);
 #else
 		if ((err = sprd_crypto_do(hash_type, tmp, seedlen+4, buf,
