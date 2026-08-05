@@ -43,91 +43,103 @@ for cf in cfg_files:
 print(f"[OK] PATH fix: {cnt}/{len(cfg_files)} files")
 
 # ---------- 2. sprd_usb_drv.h: 16KB + raw decl ----------
-patch_file("bootloader/chipram/include/sprd_usb_drv.h", [
-    ("#define MAX_RECV_LENGTH 1024 * 4", "#define MAX_RECV_LENGTH (1024 * 16) // Optimized 16KB"),
-    ("extern int usb_get_packet(unsigned char* buf, int len);",
-     "extern int usb_get_packet(unsigned char* buf, int len);\nextern int usb_get_raw_packet(unsigned char* buf, unsigned int len);"),
-], "usb_drv.h 16KB + raw decl")
+# [DISABLED] 16KB 优化会把 USB3 g_out_buffer 从 4KB 撑到 16KB，与第 4 节的
+# MAX_PKT_SIZE=0x4000 一起使 FDL1 的 BSS 结束地址从 0x20B15954 涨到
+# 0x20B21730，超出 0x20B10000 处 64KB S4/1_IRAM SRAM（0x20B20000），
+# clear_bss0 写越界 -> 芯片复位，spd_dump EXEC FDL1 后 CHECK_BAUD FAIL。
+# 能正常启动的参考 fdl1-sign.bin 即为未打补丁的 4KB 配置，故注释掉。
+# patch_file("bootloader/chipram/include/sprd_usb_drv.h", [
+#     ("#define MAX_RECV_LENGTH 1024 * 4", "#define MAX_RECV_LENGTH (1024 * 16) // Optimized 16KB"),
+#     ("extern int usb_get_packet(unsigned char* buf, int len);",
+#      "extern int usb_get_packet(unsigned char* buf, int len);\nextern int usb_get_raw_packet(unsigned char* buf, unsigned int len);"),
+# ], "usb_drv.h 16KB + raw decl")
 
 # ---------- 3. sprd_usb2_driver.c: 16KB + skip cache + raw fn ----------
-fp = p("bootloader/chipram/nand_fdl/common/sprd_usb2_driver.c")
-with open(fp, "rb") as f:
-    d = f.read().decode("utf-8", errors="replace")
-d = re.sub(r"#define MAX_RECV_LENGTH\s+\(64\*64\).*", "#define MAX_RECV_LENGTH     (256*64)// Optimized 16KB", d)
-n = d.count("#ifndef CONFIG_SCX35L64")
-d = d.replace("#ifndef CONFIG_SCX35L64", "#if 0 // Optimized skip cache")
-if "usb_get_raw_packet" not in d:
-    d += r'''
-
-/* Optimized raw path for high-speed bulk transfer - zero HDLC overhead */
-int usb_get_raw_packet(unsigned char* buf, unsigned int len)
-{
-    unsigned int total = 0;
-    unsigned char *dest = buf;
-    while (total < len) {
-        if (readIndex == recv_length) {
-            readIndex = 0;
-            recv_length = 0;
-            usb_handler();
-            if (recv_length > 0) {
-                nIndex = currentDmaBufferIndex;
-                currentDmaBufferIndex ^= 0x1;
-            } else
-                continue;
-        }
-        unsigned int avail = recv_length - readIndex;
-        unsigned int need = len - total;
-        unsigned int copy = (avail < need) ? avail : need;
-        unsigned char *src = usb_out_endpoint_buf[nIndex] + readIndex;
-        unsigned int i;
-        for (i = 0; i < copy; i++)
-            dest[total + i] = src[i];
-        readIndex += copy;
-        total += copy;
-    }
-    return total;
-}
-'''
-with open(fp, "w", newline="") as f:
-    f.write(d)
-print(f"[OK] usb2_driver.c: 16KB, skip-cache {n} sites, raw fn appended")
+# [DISABLED] 同第 2 节：16KB 接收缓冲（usb_out_endpoint_buf[2][16KB]）会把
+# USB2 平台 FDL1 的 BSS 同样撑爆；"skip cache" 和追加的 usb_get_raw_packet
+# 无其他调用方。为保持与参考 FDL1（4KB 配置）一致，整体注释掉。
+# fp = p("bootloader/chipram/nand_fdl/common/sprd_usb2_driver.c")
+# with open(fp, "rb") as f:
+#     d = f.read().decode("utf-8", errors="replace")
+# d = re.sub(r"#define MAX_RECV_LENGTH\s+\(64\*64\).*", "#define MAX_RECV_LENGTH     (256*64)// Optimized 16KB", d)
+# n = d.count("#ifndef CONFIG_SCX35L64")
+# d = d.replace("#ifndef CONFIG_SCX35L64", "#if 0 // Optimized skip cache")
+# if "usb_get_raw_packet" not in d:
+#     d += r'''
+#
+# /* Optimized raw path for high-speed bulk transfer - zero HDLC overhead */
+# int usb_get_raw_packet(unsigned char* buf, unsigned int len)
+# {
+#     unsigned int total = 0;
+#     unsigned char *dest = buf;
+#     while (total < len) {
+#         if (readIndex == recv_length) {
+#             readIndex = 0;
+#             recv_length = 0;
+#             usb_handler();
+#             if (recv_length > 0) {
+#                 nIndex = currentDmaBufferIndex;
+#                 currentDmaBufferIndex ^= 0x1;
+#             } else
+#                 continue;
+#         }
+#         unsigned int avail = recv_length - readIndex;
+#         unsigned int need = len - total;
+#         unsigned int copy = (avail < need) ? avail : need;
+#         unsigned char *src = usb_out_endpoint_buf[nIndex] + readIndex;
+#         unsigned int i;
+#         for (i = 0; i < copy; i++)
+#             dest[total + i] = src[i];
+#         readIndex += copy;
+#         total += copy;
+#     }
+#     return total;
+# }
+# '''
+# with open(fp, "w", newline="") as f:
+#     f.write(d)
+# print(f"[OK] usb2_driver.c: 16KB, skip-cache {n} sites, raw fn appended")
 
 # ---------- 4. soc_config MAX_PKT_SIZE ----------
-soc_map = {
-    "arch-roc1/soc_config.h": "0x1000",
-    "arch-qogirn6pro/soc_config.h": "0x400",
-    "arch-sharkl5/soc_config.h": "0x400",
-    "arch-sharkl5pro/soc_config.h": "0x300",
-}
-for fn, oldv in soc_map.items():
-    fp = p("bootloader/chipram/arch/arm/include/asm/" + fn)
-    if os.path.exists(fp):
-        with open(fp, "rb") as f:
-            d = f.read().decode("utf-8", errors="replace")
-        nd = re.sub(r"#define MAX_PKT_SIZE\s+%s" % re.escape(oldv),
-                    "#define MAX_PKT_SIZE    0x4000 // Optimized", d)
-        if nd != d:
-            with open(fp, "w", newline="") as f:
-                f.write(nd)
-            print(f"[OK] soc_config {fn} -> 0x4000")
-        else:
-            print(f"[SKIP] soc_config {fn} (pattern not found)")
-    else:
-        print(f"[SKIP] soc_config {fn} (not found)")
+# [DISABLED] 把 MAX_PKT_SIZE 0x1000 -> 0x4000 使 FDL1 报文池从 3x4KB 变 3x16KB
+# （+36KB BSS），配合第 2 节的 16KB 接收缓冲使 BSS 超 0x20B20000 越界。
+# 保持各平台原始值（roc1=0x1000 / qogirn6pro=0x400 / sharkl5=0x400 /
+# sharkl5pro=0x300），与能正常启动的参考 FDL1 一致。
+# soc_map = {
+#     "arch-roc1/soc_config.h": "0x1000",
+#     "arch-qogirn6pro/soc_config.h": "0x400",
+#     "arch-sharkl5/soc_config.h": "0x400",
+#     "arch-sharkl5pro/soc_config.h": "0x300",
+# }
+# for fn, oldv in soc_map.items():
+#     fp = p("bootloader/chipram/arch/arm/include/asm/" + fn)
+#     if os.path.exists(fp):
+#         with open(fp, "rb") as f:
+#             d = f.read().decode("utf-8", errors="replace")
+#         nd = re.sub(r"#define MAX_PKT_SIZE\s+%s" % re.escape(oldv),
+#                     "#define MAX_PKT_SIZE    0x4000 // Optimized", d)
+#         if nd != d:
+#             with open(fp, "w", newline="") as f:
+#                 f.write(nd)
+#             print(f"[OK] soc_config {fn} -> 0x4000")
+#         else:
+#             print(f"[SKIP] soc_config {fn} (pattern not found)")
+#     else:
+#         print(f"[SKIP] soc_config {fn} (not found)")
 
 # ---------- 4b. ddrc_init.c: sync #error guard with new MAX_PKT_SIZE ----------
-# MAX_PKT_SIZE was optimized to 0x4000 above; the DDR r2p2 code has a
-# hardcoded #error guard still expecting 0x300. Update it to match.
-ddrc_files = glob.glob(os.path.join(REPO, "bootloader", "chipram", "ddr", "**", "ddrc_init.c"), recursive=True)
-for ddrc in ddrc_files:
-    with open(ddrc, "rb") as f:
-        d = f.read().decode("utf-8", errors="replace")
-    nd = d.replace("#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x300)",
-                   "#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x4000)")
-    if nd != d:
-        with open(ddrc, "w", newline="") as f:
-            f.write(nd)
-        print(f"[OK] ddrc_init.c #error guard -> 0x4000 ({os.path.relpath(ddrc, REPO)})")
+# [DISABLED] 配套第 4 节；第 4 节停用后 guard 必须保持原值 (0x300)，
+# 否则 r2p2 平台会因 MAX_PKT_SIZE != 0x4000 触发 #error。
+# ddrc_files = glob.glob(os.path.join(REPO, "bootloader", "chipram", "ddr", "**", "ddrc_init.c"), recursive=True)
+# for ddrc in ddrc_files:
+#     with open(ddrc, "rb") as f:
+#         d = f.read().decode("utf-8", errors="replace")
+#     nd = d.replace("#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x300)",
+#                    "#if (PACKET_MAX_NUM!=3) || (MAX_PKT_SIZE!=0x4000)")
+#     if nd != d:
+#         with open(ddrc, "w", newline="") as f:
+#             f.write(nd)
+#         print(f"[OK] ddrc_init.c #error guard -> 0x4000 ({os.path.relpath(ddrc, REPO)})")
 
 # ---------- 4c. mmu.h: ttbr0_el2 sysreg encoding (zig cc / clang asm) ----------
 # clang's integrated assembler rejects "msr ttbr0_el2, %0" ("expected writable
