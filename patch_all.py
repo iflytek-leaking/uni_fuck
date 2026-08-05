@@ -682,10 +682,12 @@ for fp, flagline in [
     else:
         print(f"[SKIP] gcc12 flags already in {os.path.basename(fp)}")
 
-# ---------- 12. chipram Makefile: only fdl1 ----------
+# ---------- 12. chipram Makefile: build spl + fdl1 (ddr_scan not needed) ----------
+# BspChipram.mk copies nand_spl/u-boot-spl-16k.bin after the build, so spl MUST
+# be in ALL; ddr_scan is not consumed anywhere, so drop it for a faster build.
 patch_file("bootloader/chipram/Makefile", [
-    ("ALL +=  spl fdl1 ddr_scan", "ALL +=  fdl1"),
-], "chipram ALL=fdl1")
+    ("ALL +=  spl fdl1 ddr_scan", "ALL +=  spl fdl1"),
+], "chipram ALL=spl fdl1")
 
 # ---------- 13. defconfig: disable video/battery ----------
 fp = p("bootloader/u-boot15/configs/ud710_2h10_defconfig")
