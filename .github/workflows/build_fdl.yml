@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Needed to publish GitHub Releases (softprops/action-gh-release)
+permissions:
+  contents: write
+
 jobs:
   # ──────────────────────────────────────────────────
   # 18 路并行编译：每个平台一个独立 runner (4-core x64)
@@ -147,9 +151,55 @@ jobs:
           echo ""
           echo "Total: $(ls fdl_all/*.bin 2>/dev/null | wc -l) files"
 
+      - name: Package per-platform zips
+        run: |
+          mkdir -p release_zips
+          for f in fdl_all/*_fdl1.bin; do
+            plat=$(basename "$f" _fdl1.bin)
+            fdl2="fdl_all/${plat}_fdl2.bin"
+            if [ -f "$f" ] && [ -f "$fdl2" ]; then
+              tmpdir="tmp_${plat}"
+              mkdir -p "$tmpdir"
+              cp "$f" "$tmpdir/fdl1.bin"
+              cp "$fdl2" "$tmpdir/fdl2.bin"
+              (cd "$tmpdir" && zip -q "../release_zips/${plat}.zip" fdl1.bin fdl2.bin)
+              rm -rf "$tmpdir"
+              echo "  ${plat}.zip: $(stat -c%s "release_zips/${plat}.zip") bytes"
+            else
+              echo "  WARN: $plat incomplete (fdl1=$([ -f "$f" ] && echo yes || echo no), fdl2=$([ -f "$fdl2" ] && echo yes || echo no))"
+            fi
+          done
+          echo ""
+          echo "Total zips: $(ls release_zips/*.zip 2>/dev/null | wc -l)"
+
       - name: Upload combined artifact
         uses: actions/upload-artifact@v4
         with:
           name: fdl-all-platforms-signed
           path: fdl_all/
           retention-days: 30
+
+      # ── 发布到 GitHub Releases（push 到 main/master，或手动触发） ──
+      - name: Set release tag
+        id: rel_tag
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+        run: echo "tag=fdl-build-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.rel_tag.outputs.tag }}
+          name: FDL Build ${{ github.run_number }}
+          body: |
+            FDL binaries for all supported platforms.
+
+            - **FDL1** (chipram): signed for SECURE_BOOT=SPRD platforms
+            - **FDL2** (bootloader): signed for SECURE_BOOT=SPRD platforms
+            - ums7520_haps / ums7520_zebu: unsigned (SECURE_BOOT=NONE)
+
+            Each zip is named after its platform and contains `fdl1.bin` + `fdl2.bin`.
+
+            Triggered by commit `${{ github.sha }}`.
+          files: release_zips/*.zip
+          generate_release_notes: false
