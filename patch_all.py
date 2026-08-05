@@ -584,7 +584,25 @@ patch_file("bootloader/chipram/secure/efuse/Makefile", [
 # under CONFIG_SP_DDR_BOOT. A C99 inline definition emits no symbol, so
 # process_cp_coupling_info.c's extern references fail to link on SP_DDR_BOOT
 # platforms (all ud710/ums512/ums7520). modem_entry.c is the TU that includes
-# cp_boot.h; give it the out-of-line definitions.
+# cp_boot.h; give it the out-of-line definitions. The header's inline
+# *definitions* would then collide with the out-of-line ones inside the same
+# TU ("redefinition of 'get_sp_bootcode_*'"), so first convert them into
+# plain extern declarations (kept inside the existing #ifdef CONFIG_SP_DDR_BOOT).
+_cpb_inline_re = re.compile(
+    r'inline int get_sp_bootcode_size\(void\)\s*\{(?:[^}]*)\}\s*'
+    r'inline void \*get_sp_bootcode_buf\(void\)\s*\{(?:[^}]*)\}')
+_cpb_repl = ('extern int get_sp_bootcode_size(void);\n\n'
+             'extern void *get_sp_bootcode_buf(void);')
+for _ch in glob.glob(os.path.join(REPO, "bootloader/u-boot15/board/spreadtrum/*/cp_boot.h")):
+    _rel = os.path.relpath(_ch, REPO)
+    with open(_ch, "rb") as f:
+        _d = f.read().decode("utf-8", errors="replace")
+    _nd, _n = _cpb_inline_re.subn(_cpb_repl, _d)
+    if _n:
+        with open(_ch, "w", newline="") as f:
+            f.write(_nd)
+        print(f"[OK] cp_boot.h inline -> extern ({_rel})")
+
 for _me in glob.glob(os.path.join(REPO, "bootloader/u-boot15/board/spreadtrum/*/modem_entry.c")):
     _rel = os.path.relpath(_me, REPO)
     with open(_me, "rb") as f:
