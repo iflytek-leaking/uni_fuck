@@ -213,9 +213,14 @@ def auto_fix_implicit_protos(dirs):
             for name, def_idx, sig in defs:
                 called_before = False
                 for j in range(def_idx):
-                    if _re.search(r'\b' + _re.escape(name) + r'\s*\(', lines[j]):
-                        called_before = True
-                        break
+                    if not _re.search(r'\b' + _re.escape(name) + r'\s*\(', lines[j]):
+                        continue
+                    # skip lines that are themselves definitions (same-name
+                    # overloads/conditional variants would otherwise count as calls)
+                    if def_re.match(lines[j]):
+                        continue
+                    called_before = True
+                    break
                 if called_before:
                     proto = sig.rstrip().rstrip('{').rstrip() + ";"
                     if proto not in lines and not any(p == proto for p in protos):
@@ -237,35 +242,58 @@ def auto_fix_implicit_protos(dirs):
 auto_fix_implicit_protos([
     "bootloader/chipram/ddr",
     "bootloader/chipram/nand_spl/ufs",
+    "bootloader/u-boot15/common",
 ])
 
-# ---------- 4f. Generic ddrc_print_debug for non-orca platforms ----------
-# emmc_boot.c / ufs_boot.c (generic SPL) call ddrc_print_debug under
-# CONFIG_TEECFG_CUSTOM, but it is only defined in the orca DDR code
-# (r1p1_orca/ddrc_r1p1_common.c) -> undefined reference on all other SoCs.
-emmc = p("bootloader/chipram/nand_spl/emmc_boot.c")
-if os.path.exists(emmc):
-    with open(emmc, "rb") as f:
-        d = f.read().decode("utf-8", errors="replace")
-    marker = "/* generic ddrc_print_debug (non-orca) */"
-    if marker not in d:
-        d += """
-
-/* generic ddrc_print_debug for platforms without the orca DDR implementation */
-#ifndef CONFIG_SOC_ORCA
-void ddrc_print_debug(const char *string)
-{
-	printf("%s", string);
-}
-#endif
-"""
-        with open(emmc, "w", newline="") as f:
-            f.write(d)
-        print("[OK] emmc_boot.c generic ddrc_print_debug added")
+# ---------- 4f. emmc_boot.c / ufs_boot.c: ddrc_print_debug -> printf ----------
+# Generic SPL files call ddrc_print_debug under CONFIG_TEECFG_CUSTOM, but that
+# function only exists in some SoCs' DDR code (orca r1p1_orca, roc1 r1p1) ->
+# undefined reference on r2p2 SoCs and multiple definition on r1p1 SoCs.
+# printf is universal; replace the call sites.
+for _rel in ["bootloader/chipram/nand_spl/emmc_boot.c",
+             "bootloader/chipram/nand_spl/ufs_boot.c"]:
+    _fp = p(_rel)
+    if os.path.exists(_fp):
+        with open(_fp, "rb") as f:
+            _d = f.read().decode("utf-8", errors="replace")
+        _nd = _d.replace('ddrc_print_debug("teecfg header verify failed!\\n");',
+                         'printf("teecfg header verify failed!\\n");')
+        if _nd != _d:
+            with open(_fp, "w", newline="") as f:
+                f.write(_nd)
+            print(f"[OK] {_rel}: ddrc_print_debug -> printf")
+        else:
+            print(f"[SKIP] {_rel}: no ddrc_print_debug call found")
     else:
-        print("[SKIP] emmc_boot.c ddrc_print_debug already present")
-else:
-    print("[SKIP] emmc_boot.c not found")
+        print(f"[SKIP] {_rel} not found")
+
+# ---------- 4g. zebu (qogirn6pro) secure deps ----------
+# sprd_verify.o is unconditional (obj-y) and calls sprd_set_version/sprd_get_version
+# (defined in sec_efuse_api.c, gated by CONFIG_SECURE_EFUSE) and sprd_rsa_verify
+# (defined in sprd_crypto_sw.c, missing from the SW_CRYPT obj list). qogirn6pro has
+# CONFIG_SECURE_EFUSE commented out -> enable it and add sprd_crypto_sw.o.
+patch_file("bootloader/chipram/arch/arm/include/asm/arch-qogirn6pro/soc_config.h", [
+    ("//#define CONFIG_SECURE_EFUSE", "#define CONFIG_SECURE_EFUSE"),
+], "qogirn6pro enable CONFIG_SECURE_EFUSE")
+patch_file("bootloader/chipram/secure/sprd/Makefile", [
+    ("obj-$(CONFIG_SW_CRYPT)\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o",
+     "obj-$(CONFIG_SW_CRYPT)\t+= pk1.o sec_string.o sprd_sha256_sw.o sprd_rsa_sw.o sprd_crypto_sw.o"),
+], "secure sprd SW_CRYPT add sprd_crypto_sw.o")
+
+# ---------- 4h. exfat.h union missing semicolon ----------
+# include/exfat.h has a trailing anonymous union whose closing '}' lacks ';'
+# -> clang "expected member name or ';' after declaration specifiers".
+exfat = p("bootloader/u-boot15/include/exfat.h")
+if os.path.exists(exfat):
+    with open(exfat, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    nd = d.replace("}\nexfat_file_entry;", "};\nexfat_file_entry;")
+    if nd != d:
+        with open(exfat, "w", newline="") as f:
+            f.write(nd)
+        print("[OK] exfat.h union semicolon fixed")
+    else:
+        print("[SKIP] exfat.h pattern not found")
 
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
@@ -332,7 +360,11 @@ fp = p("bootloader/u-boot15/common/cmd_download.c")
 with open(fp, "rb") as f:
     d = f.read().decode("utf-8", errors="replace")
 old_reg = "\tdl_cmd_register(BSL_CMD_DIS_HDLC, dl_cmd_disable_hdlc);"
-new_reg = old_reg + "\n\tdl_cmd_register(BSL_CMD_UNLOCK_BL, dl_cmd_unlock_bl);\n\tdl_cmd_register(BSL_CMD_DISABLE_AVB, dl_cmd_disable_avb);"
+new_reg = ("#define BSL_CMD_UNLOCK_BL 0x500\n"
+           "#define BSL_CMD_DISABLE_AVB 0x502\n\n"
+           "extern int dl_cmd_unlock_bl(dl_packet_t *packet, void *arg);\n"
+           "extern int dl_cmd_disable_avb(dl_packet_t *packet, void *arg);\n\n" +
+           old_reg + "\n\tdl_cmd_register(BSL_CMD_UNLOCK_BL, dl_cmd_unlock_bl);\n\tdl_cmd_register(BSL_CMD_DISABLE_AVB, dl_cmd_disable_avb);")
 if "BSL_CMD_UNLOCK_BL" in d:
     print("[SKIP] already registered")
 elif old_reg in d:
