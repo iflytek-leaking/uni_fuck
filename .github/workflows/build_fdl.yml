@@ -54,8 +54,20 @@ jobs:
 
       - name: Install system deps
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
+          # 18 parallel matrix jobs hammer apt on the runner image. Common hangs
+          # are caused by apt-daily/unattended-upgrades holding the dpkg lock, or
+          # slow apt mirrors with no timeout. Kill the timers, bound network
+          # timeouts, and retry the update.
+          sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+          sudo pkill -f "apt-get|unattended-upgrades|aptd" 2>/dev/null || true
+          export DEBIAN_FRONTEND=noninteractive
+          APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120"
+          for i in 1 2 3 4 5; do
+            sudo apt-get update -qq $APT_OPTS && break
+            echo "apt-get update attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
+          sudo apt-get install -y -qq $APT_OPTS \
             binutils-aarch64-linux-gnu \
             gcc-aarch64-linux-gnu \
             device-tree-compiler \
