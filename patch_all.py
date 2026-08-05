@@ -148,6 +148,41 @@ if os.path.exists(mmu_h):
 else:
     print("[SKIP] mmu.h not found")
 
+# ---------- 4d. Fix conflicting types (old-style C implicit declarations) ----------
+# Full sources define e.g. `void reset_and_restore_hc()` AFTER call sites with no
+# prototype. clang treats the implicit declaration as returning int -> conflicting
+# types with the void definition (hard error, cannot be silenced with -Wno-*).
+def add_protos(rel, protos):
+    fp = p(rel)
+    if not os.path.exists(fp):
+        print(f"[SKIP] add_protos {rel} not found")
+        return
+    with open(fp, "rb") as f:
+        d = f.read().decode("utf-8", errors="replace")
+    if all(proto.split(";")[0] in d for proto in protos):
+        print(f"[SKIP] {rel} prototypes already present")
+        return
+    lines = d.split("\n")
+    idx = 0
+    for i, ln in enumerate(lines):
+        if ln.startswith("#include"):
+            idx = i
+    insert = "\n" + "\n".join(protos) + "\n"
+    lines.insert(idx + 1, insert)
+    with open(fp, "w", newline="") as f:
+        f.write("\n".join(lines))
+    print(f"[OK] {rel} prototypes added")
+
+add_protos("bootloader/chipram/nand_spl/ufs/sprd_ufs.c", [
+    "void reset_and_restore_hc(void);",
+    "void sprd_ufs_block_dev_config(void);",
+])
+for phy in ["r1p1", "r1p1_orca"]:
+    add_protos(f"bootloader/chipram/ddr/ddr_init/init/ddrc/{phy}/ddrc_r1p1_phy_init.c", [
+        "void ddrc_phy_io_get(uint32 phy_base, uint32 freq_sel);",
+        "void ddrc_phy_io_set(uint32 phy_base, uint32 freq_sel);",
+    ])
+
 # ---------- 5. fdt_for_each_subnode macro order (gcc12) ----------
 patch_file("bootloader/u-boot15/common/image-fit.c", [
     ("fdt_for_each_subnode(fit, noffset, image_noffset)", "fdt_for_each_subnode(noffset, fit, image_noffset)"),
