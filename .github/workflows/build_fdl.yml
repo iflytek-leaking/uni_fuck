@@ -55,27 +55,33 @@ jobs:
       - name: Install system deps
         timeout-minutes: 15
         run: |
-          # 18 parallel matrix jobs hammer apt on the runner image. Previous
-          # hangs came from apt-daily holding the dpkg lock and from apt having
-          # no network timeout. Every privileged op is wrapped in `timeout` so
-          # the step can never hang forever; apt itself bounds the dpkg lock
-          # wait and retries the network.
+          # 18 parallel matrix jobs hammer apt on the runner image. apt-get
+          # update is the slowest, most hang-prone op, and the runner image's
+          # package index is fresh enough, so try install FIRST and only fall
+          # back to update if a package can't be found. Every privileged op is
+          # wrapped in `timeout` and apt bounds its lock wait and retries.
           export DEBIAN_FRONTEND=noninteractive
           APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120"
           sudo pkill -f "unattended-upgrades|aptd" 2>/dev/null || true
-          for i in 1 2 3 4 5; do
-            timeout 300 sudo apt-get update -qq --fix-missing $APT_OPTS && break
-            echo "apt-get update attempt $i failed, retrying in 15s..."
-            sleep 15
-          done
-          timeout 600 sudo apt-get install -y -qq --fix-missing --no-install-recommends $APT_OPTS \
-            binutils-aarch64-linux-gnu \
-            gcc-aarch64-linux-gnu \
-            device-tree-compiler \
-            python3 \
-            bc flex bison \
-            libssl-dev \
-            libc6-i386 lib32z1
+          install_pkgs() {
+            timeout 600 sudo apt-get install -y -qq --fix-missing --no-install-recommends $APT_OPTS \
+              binutils-aarch64-linux-gnu \
+              gcc-aarch64-linux-gnu \
+              device-tree-compiler \
+              python3 \
+              bc flex bison \
+              libssl-dev \
+              libc6-i386 lib32z1
+          }
+          if ! install_pkgs; then
+            echo "direct install failed (missing index?), updating and retrying..."
+            for i in 1 2 3 4 5; do
+              timeout 180 sudo apt-get update -qq --fix-missing $APT_OPTS && break
+              echo "apt-get update attempt $i failed, retrying in 10s..."
+              sleep 10
+            done
+            install_pkgs
+          fi
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
