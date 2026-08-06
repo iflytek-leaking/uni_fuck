@@ -81,8 +81,10 @@ if [[ "$HAS_S" != "1" && -n "$DEPFILE" ]]; then
     ARGS+=("-MD" "-MF" "$DEPFILE")
 fi
 
-# Run zig cc
+# Run zig cc (conservative flags: keep unsigned-wrap/aliasing/overflow semantics like GCC to
+# avoid clang folding UB in DDR training code differently from the original GCC 2015 build)
 zig cc -target aarch64-linux-gnu "${ARGS[@]}" \
+    -fwrapv -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks \
     -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int \
     -Wno-return-type -Wno-int-conversion -Wno-incompatible-pointer-types \
     -Wno-deprecated-non-prototype -Wno-deprecated-declarations
