@@ -201,7 +201,7 @@
 #define GPIO_DETECT_DRAM_TYPE
 #endif
 */
-//#define ADC_DETECT_DRAM_TYPE
+#define ADC_DETECT_DRAM_TYPE
 #define DDR_MODE	0xF0000
 
 //#define DDR_DFS_TEST

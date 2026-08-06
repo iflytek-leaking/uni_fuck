@@ -261,8 +261,9 @@ void ddr_type_detect(void)
 	}
 	if(case_n == i)
 	{
-		ddrc_print_err("ddr_type_detect failed\r\n");
-		while(1);
+		ddrc_print_err("ddr_type_detect failed, fallback to default config\r\n");
+		ddr_chip_cur.pinmux_case = CFG_PINMUX_CASE;
+		ddr_chip_cur.chip_type = CFG_DRAM_TYPE;
 	}
 #endif
 }
