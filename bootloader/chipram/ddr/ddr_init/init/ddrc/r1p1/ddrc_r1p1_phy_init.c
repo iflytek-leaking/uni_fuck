@@ -18,7 +18,7 @@ extern uint32 soc_chip_id;
 extern struct ddr_detect_info detect_info_cs[2];
 #endif
 uint32 min_freq, max_freq;
-uint32 freq_sel_mask = FREQ_SEL_MASK;
+uint32 freq_sel_mask = 0x1;	/*FDL1: train only F0 (256MHz) to keep boot fast/conservative*/
 TRAIN_CONDITIONS_TABLE phy_train;
 uint32 read_dm_phy0 = 0;
 uint32 read_dm_phy1 = 0;
